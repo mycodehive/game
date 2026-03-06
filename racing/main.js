@@ -106,6 +106,7 @@ function getInput(controls) {
 }
 
 function formatMs(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "00:00.000";
   const m = Math.floor(ms / 60000);
   const s = Math.floor((ms % 60000) / 1000);
   const mm = Math.floor(ms % 1000);
@@ -330,6 +331,7 @@ class Game {
     this.playerCount = 1;
     this.players = [];
     this.pendingNames = ["", ""];
+    this.winner = null;
     this.started = false;
     this.finished = false;
     this.selectedMode = null;
@@ -508,6 +510,7 @@ class Game {
     this.playerCount = playerCount;
     this.started = false;
     this.finished = false;
+    this.winner = null;
 
     this.menuRoot.innerHTML = "";
     if (this.resultOverlay) {
@@ -1024,11 +1027,30 @@ class Game {
         if (player.currentLap >= this.track.laps) {
           player.finished = true;
           player.finishTime = player.raceTime;
+          this.onPlayerFinished(player);
         } else {
           player.currentLap++;
         }
       }
     }
+  }
+
+  onPlayerFinished(player) {
+    if (this.playerCount === 1) {
+      this.started = false;
+      this.finished = true;
+      this.winner = player;
+      this.showSingleResult(player);
+      return;
+    }
+
+    if (this.winner) return;
+    this.winner = player;
+    this.started = false;
+    this.finished = true;
+    const loser = this.players.find((p) => p !== player);
+    if (loser && !loser.finishTime) loser.finishTime = loser.raceTime;
+    this.showMultiResult(player, loser);
   }
 
   getNearestTrackT(position) {
@@ -1134,7 +1156,7 @@ class Game {
   }
 
   maybeFinishRace() {
-    if (!this.started) return;
+    if (!this.started || this.finished) return;
     if (!this.players.every((p) => p.finished)) return;
 
     this.started = false;
@@ -1142,9 +1164,11 @@ class Game {
 
     if (this.playerCount === 1) {
       const p = this.players[0];
+      this.winner = p;
       this.showSingleResult(p);
     } else {
       const sorted = [...this.players].sort((a, b) => a.finishTime - b.finishTime);
+      this.winner = sorted[0];
       this.showMultiResult(sorted[0], sorted[1]);
     }
   }
@@ -1154,7 +1178,7 @@ class Game {
     wrap.className = "result-overlay";
     wrap.innerHTML = `
       <div class="result-panel">
-        <div class="result-title">RACE COMPLETE</div>
+        <div class="result-title">${p.name} FINISHED!</div>
         <div class="result-total-time">${formatMs(p.raceTime * 1000)}</div>
         <div class="result-best-lap">Best Lap: ${formatMs(p.bestLap * 1000)}</div>
         <ul class="result-lap-list">
@@ -1172,7 +1196,7 @@ class Game {
     wrap.className = "result-overlay";
     wrap.innerHTML = `
       <div class="result-panel">
-        <div class="result-title">${winner.name} WINS</div>
+        <div class="result-title">${winner.name} WINS!</div>
         <div class="result-total-time">${winner.name}: ${formatMs(winner.finishTime * 1000)}</div>
         <div class="result-best-lap">${loser.name}: ${formatMs(loser.finishTime * 1000)}</div>
         <ul class="result-lap-list">
