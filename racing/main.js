@@ -731,7 +731,7 @@ class Game {
       const tan = this.spline.getTangentAt(t).normalize();
       const a = new THREE.Mesh(arrowGeo, arrowMat);
       a.position.set(p.x, p.y + 0.03, p.z);
-      a.rotation.y = Math.atan2(tan.x, tan.z);
+      a.rotation.y = Math.atan2(tan.x, tan.z) + Math.PI;
       this.scene.add(a);
     }
   }
@@ -1064,7 +1064,7 @@ class Game {
     player.hud.speed.textContent = `${Math.round(Math.abs(speed))} km/h`;
     player.hud.lap.textContent = `LAP ${Math.min(player.currentLap, this.track.laps)}/${this.track.laps}`;
     player.hud.time.textContent = formatMs(player.raceTime * 1000);
-    player.hud.warning.textContent = player.wrongWay ? "WRONG WAY" : "";
+    player.hud.warning.textContent = player.wrongWay ? "역주행입니다! 반대로 가세요!" : "";
   }
 
   updateMinimap() {
