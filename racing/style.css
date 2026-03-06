@@ -170,6 +170,26 @@ canvas { display: block; }
   text-shadow: 0 0 8px rgba(255, 30, 30, 0.8);
   min-height: 1.1em;
 }
+.hud-ranking {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 260px;
+  background: rgba(0,0,0,.46);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: "Courier New", monospace;
+  color: #fff;
+}
+.hud-ranking-title { font-size: .95rem; font-weight: 700; margin-bottom: 6px; }
+.hud-ranking-list { list-style: none; margin: 0; padding: 0; font-size: .82rem; }
+.hud-ranking-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+}
 
 #split-divider {
   position: absolute;

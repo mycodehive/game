@@ -332,6 +332,8 @@ class Game {
     this.players = [];
     this.pendingNames = ["", ""];
     this.winner = null;
+    this.trackTop5 = [];
+    this.recordsSaved = false;
     this.started = false;
     this.finished = false;
     this.selectedMode = null;
@@ -493,6 +495,16 @@ class Game {
       };
     });
 
+    this.rankingBox = document.createElement("div");
+    this.rankingBox.className = "hud-ranking";
+    this.rankingBox.innerHTML = `
+      <div class="hud-ranking-title">TOP 5 - ${this.track.name}</div>
+      <ul class="hud-ranking-list"></ul>
+    `;
+    this.hudRoot.appendChild(this.rankingBox);
+    this.rankingListEl = this.rankingBox.querySelector(".hud-ranking-list");
+    this.renderTrackRanking();
+
     if (this.playerCount === 1) {
       const hint = document.createElement("div");
       hint.className = "hud-controls-hint";
@@ -505,12 +517,32 @@ class Game {
     }
   }
 
+  renderTrackRanking() {
+    if (!this.rankingListEl) return;
+    this.rankingListEl.innerHTML = "";
+    if (!Array.isArray(this.trackTop5) || this.trackTop5.length === 0) {
+      const li = document.createElement("li");
+      li.innerHTML = "<span>No records yet</span><span>-</span>";
+      this.rankingListEl.appendChild(li);
+      return;
+    }
+
+    this.trackTop5.slice(0, 5).forEach((r, idx) => {
+      const li = document.createElement("li");
+      const name = r.player || "Unknown";
+      const t = formatMs(Number(r.totalTimeMs || 0));
+      li.innerHTML = `<span>${idx + 1}. ${name}</span><span>${t}</span>`;
+      this.rankingListEl.appendChild(li);
+    });
+  }
+
   setupRace(track, playerCount) {
     this.track = track;
     this.playerCount = playerCount;
     this.started = false;
     this.finished = false;
     this.winner = null;
+    this.recordsSaved = false;
 
     this.menuRoot.innerHTML = "";
     if (this.resultOverlay) {
@@ -1035,11 +1067,52 @@ class Game {
     }
   }
 
+  async fetchTrackTop5(trackId) {
+    try {
+      const res = await fetch(`/api/records?trackId=${encodeURIComponent(trackId)}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.top5) ? data.top5 : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async saveRecord(trackId, player) {
+    if (!player || !player.finishTime) return;
+    const payload = {
+      trackId,
+      player: player.name,
+      totalTimeMs: Math.round(player.finishTime * 1000),
+      bestLapMs: Number.isFinite(player.bestLap) ? Math.round(player.bestLap * 1000) : 0
+    };
+    try {
+      await fetch("/api/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch {
+    }
+  }
+
+  async persistRaceRecords(playersToSave) {
+    if (this.recordsSaved || !this.track) return;
+    this.recordsSaved = true;
+    const list = (playersToSave || []).filter((p) => p && p.finishTime);
+    for (const p of list) {
+      await this.saveRecord(this.track.id, p);
+    }
+    this.trackTop5 = await this.fetchTrackTop5(this.track.id);
+    this.renderTrackRanking();
+  }
+
   onPlayerFinished(player) {
     if (this.playerCount === 1) {
       this.started = false;
       this.finished = true;
       this.winner = player;
+      this.persistRaceRecords([player]);
       this.showSingleResult(player);
       return;
     }
@@ -1050,6 +1123,7 @@ class Game {
     this.finished = true;
     const loser = this.players.find((p) => p !== player);
     if (loser && !loser.finishTime) loser.finishTime = loser.raceTime;
+    this.persistRaceRecords([player]);
     this.showMultiResult(player, loser);
   }
 
@@ -1165,10 +1239,12 @@ class Game {
     if (this.playerCount === 1) {
       const p = this.players[0];
       this.winner = p;
+      this.persistRaceRecords([p]);
       this.showSingleResult(p);
     } else {
       const sorted = [...this.players].sort((a, b) => a.finishTime - b.finishTime);
       this.winner = sorted[0];
+      this.persistRaceRecords(sorted.filter((p) => p.finishTime));
       this.showMultiResult(sorted[0], sorted[1]);
     }
   }
@@ -1240,6 +1316,7 @@ class Game {
   }
 
   async startRace(track, playerCount) {
+    this.trackTop5 = await this.fetchTrackTop5(track.id);
     this.setupRace(track, playerCount);
     await this.runCountdown();
     this.started = true;
