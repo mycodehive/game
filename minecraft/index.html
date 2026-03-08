@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minecraft Playground</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Voxel Sandbox</p>
+        <h1>마인크래프트풍 동물 마을</h1>
+        <p class="hero-text">
+          캐릭터를 고르고 블록 월드 안을 돌아다니세요. 나무, 고양이, 말, 소, 돼지, 닭, 양,
+          그리고 집이 배치된 작은 마을입니다.
+        </p>
+      </div>
+      <div class="hero-card">
+        <div class="card-title">조작법</div>
+        <p>`WASD` 또는 방향키로 이동</p>
+        <p>`Space` 공격</p>
+        <p>마우스로 캐릭터 선택</p>
+      </div>
+    </section>
+
+    <section class="layout">
+      <aside class="panel">
+        <h2>캐릭터 선택</h2>
+        <div id="character-list" class="character-list" aria-label="캐릭터 선택"></div>
+
+        <section class="info-box">
+          <h3>현재 캐릭터</h3>
+          <div id="selected-name" class="selected-name">탐험가</div>
+          <p id="selected-description" class="selected-description"></p>
+        </section>
+
+        <section class="info-box">
+          <h3>월드 구성</h3>
+          <ul class="entity-list">
+            <li>나무 5그루</li>
+            <li>고양이 1마리</li>
+            <li>말 1마리</li>
+            <li>소 1마리</li>
+            <li>돼지 1마리</li>
+            <li>닭 1마리</li>
+            <li>양 1마리</li>
+            <li>집 1채</li>
+          </ul>
+        </section>
+      </aside>
+
+      <section class="stage-panel">
+        <div id="viewport" class="viewport" aria-label="마인크래프트풍 3D 게임 화면"></div>
+        <div class="hud">
+          <span id="player-pos">위치: (0, 0)</span>
+          <span id="focus-name">타겟: 없음</span>
+          <span id="attack-state">공격 준비됨</span>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
