@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>사다리 게임</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+      background: linear-gradient(180deg, #dff7d8 0%, #f9f5d7 100%);
+      color: #2d2d2d;
+    }
+
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      text-align: center;
+      font-size: 32px;
+    }
+
+    .subtitle {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #4d4d4d;
+    }
+
+    .game-layout {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .board-area {
+      background: #ffffffcc;
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    }
+
+    .board-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 18px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(255,255,255,0.5), transparent 20%),
+        linear-gradient(180deg, #cdebb5 0%, #f7edc7 100%);
+      border: 4px solid #7b9a55;
+    }
+
+    .board {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      grid-template-rows: repeat(10, 1fr);
+    }
+
+    .cell {
+      position: relative;
+      border: 1px solid rgba(80, 110, 60, 0.25);
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      padding: 4px;
+      overflow: hidden;
+    }
+
+    .cell:nth-child(odd) {
+      background: rgba(255,255,255,0.18);
+    }
+
+    .cell:nth-child(even) {
+      background: rgba(160, 208, 124, 0.15);
+    }
+
+    .cell-number {
+      font-size: 13px;
+      font-weight: 700;
+      color: #4e4e4e;
+      z-index: 2;
+      background: rgba(255,255,255,0.65);
+      padding: 1px 5px;
+      border-radius: 999px;
+    }
+
+    .start-label,
+    .finish-label {
+      position: absolute;
+      font-weight: 800;
+      font-size: 14px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      color: #fff;
+      z-index: 5;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    }
+
+    .start-label {
+      right: 8px;
+      bottom: 8px;
+      background: #ff8a00;
+    }
+
+    .finish-label {
+      right: 8px;
+      top: 8px;
+      background: #2e9f3d;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .token-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .token {
+      position: absolute;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      border: 3px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+      transition: left 0.35s ease, top 0.35s ease;
+    }
+
+    .token.p1 {
+      background: #ff5252;
+    }
+
+    .token.p2 {
+      background: #3b82f6;
+    }
+
+    .side-panel {
+      background: #ffffffcc;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      position: sticky;
+      top: 20px;
+    }
+
+    .status-box {
+      background: #f6f8ed;
+      border: 1px solid #d7e2c1;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .status-box h2 {
+      font-size: 18px;
+      margin: 0 0 10px;
+    }
+
+    .players {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .player-card {
+      border-radius: 14px;
+      padding: 12px;
+      font-weight: 700;
+      background: #f8f8f8;
+      border: 2px solid transparent;
+    }
+
+    .player-card.active {
+      border-color: #333;
+      background: #fff8d8;
+    }
+
+    .player-card.p1 {
+      box-shadow: inset 0 0 0 2px rgba(255,82,82,0.15);
+    }
+
+    .player-card.p2 {
+      box-shadow: inset 0 0 0 2px rgba(59,130,246,0.15);
+    }
+
+    .controls {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    button {
+      border: none;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-roll {
+      background: #ffcc29;
+      color: #3b2f00;
+    }
+
+    .btn-reset {
+      background: #4caf50;
+      color: #fff;
+    }
+
+    .dice-box {
+      text-align: center;
+      padding: 16px;
+      border-radius: 16px;
+      background: #f9fbff;
+      border: 1px solid #dbe8ff;
+      margin-bottom: 16px;
+    }
+
+    .dice {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 10px;
+      background: #fff;
+      border-radius: 16px;
+      border: 3px solid #333;
+      display: grid;
+      place-items: center;
+      font-size: 32px;
+      font-weight: 900;
+    }
+
+    .log {
+      height: 240px;
+      overflow: auto;
+      border-radius: 14px;
+      border: 1px solid #ddd;
+      background: #fff;
+      padding: 12px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .log-item {
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed #e5e5e5;
+    }
+
+    .legend {
+      margin-top: 16px;
+      font-size: 14px;
+      color: #444;
+      line-height: 1.6;
+      background: #f8fff1;
+      border: 1px solid #dbecc9;
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .game-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .side-panel {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🌿 사다리 게임</h1>
+    <div class="subtitle">HTML, CSS, JavaScript로 만든 2인용 웹 보드게임</div>
+
+    <div class="game-layout">
+      <section class="board-area">
+        <div class="board-wrapper" id="boardWrapper">
+          <div class="board" id="board"></div>
+          <svg class="overlay" id="overlay"></svg>
+          <div class="token-layer" id="tokenLayer">
+            <div class="token p1" id="token1" title="플레이어 1"></div>
+            <div class="token p2" id="token2" title="플레이어 2"></div>
+          </div>
+          <div class="start-label">출발</div>
+          <div class="finish-label">도착</div>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <div class="status-box">
+          <h2>게임 상태</h2>
+          <div id="turnText">현재 턴: 플레이어 1</div>
+        </div>
+
+        <div class="players">
+          <div class="player-card p1 active" id="playerCard1">🔴 플레이어 1 : <span id="pos1">1</span>칸</div>
+          <div class="player-card p2" id="playerCard2">🔵 플레이어 2 : <span id="pos2">1</span>칸</div>
+        </div>
+
+        <div class="dice-box">
+          <div class="dice" id="diceFace">🎲</div>
+          <div id="diceText">주사위를 굴려 주세요.</div>
+        </div>
+
+        <div class="controls">
+          <button class="btn-roll" id="rollBtn">주사위 굴리기</button>
+          <button class="btn-reset" id="resetBtn">새 게임</button>
+        </div>
+
+        <div class="log" id="log"></div>
+
+        <div class="legend">
+          <strong>규칙</strong><br>
+          1. 플레이어가 번갈아 주사위를 굴립니다.<br>
+          2. 사다리를 만나면 위로 올라갑니다.<br>
+          3. 미끄럼을 만나면 아래로 내려갑니다.<br>
+          4. 먼저 100칸에 도착하면 승리입니다.
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const board = document.getElementById("board");
+    const boardWrapper = document.getElementById("boardWrapper");
+    const overlay = document.getElementById("overlay");
+    const token1 = document.getElementById("token1");
+    const token2 = document.getElementById("token2");
+    const rollBtn = document.getElementById("rollBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const diceFace = document.getElementById("diceFace");
+    const diceText = document.getElementById("diceText");
+    const turnText = document.getElementById("turnText");
+    const pos1Text = document.getElementById("pos1");
+    const pos2Text = document.getElementById("pos2");
+    const log = document.getElementById("log");
+    const playerCard1 = document.getElementById("playerCard1");
+    const playerCard2 = document.getElementById("playerCard2");
+
+    // 사다리 / 미끄럼 위치
+    // key: 시작 칸, value: 이동 후 칸
+    const jumps = {
+      // ladders
+      1: 15,
+      8: 26,
+      13: 34,
+      21: 38,
+      28: 47,
+      53: 69,
+      59: 79,
+      62: 83,
+      76: 89,
+
+      // slides
+      11: 3,
+      17: 7,
+      35: 24,
+      44: 35,
+      50: 30,
+      66: 54,
+      72: 50,
+      82: 61,
+      93: 73,
+      98: 78
+    };
+
+    let game = {
+      positions: [1, 1],
+      currentPlayer: 0,
+      isAnimating: false,
+      ended: false
+    };
+
+    function getGridPosition(n) {
+      const rowFromBottom = Math.floor((n - 1) / 10);
+      const colInRow = (n - 1) % 10;
+
+      const row = 9 - rowFromBottom;
+      const isEvenRowFromBottom = rowFromBottom % 2 === 0;
+      const col = isEvenRowFromBottom ? colInRow : 9 - colInRow;
+
+      return { row, col };
+    }
+
+    function createBoard() {
+      board.innerHTML = "";
+
+      for (let n = 100; n >= 1; n--) {
+        const pos = getGridPosition(n);
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.number = n;
+        cell.style.gridRowStart = pos.row + 1;
+        cell.style.gridColumnStart = pos.col + 1;
+
+        const number = document.createElement("div");
+        number.className = "cell-number";
+        number.textContent = n;
+        cell.appendChild(number);
+
+        board.appendChild(cell);
+      }
+    }
+
+    function getCellCenter(n) {
+      const rect = boardWrapper.getBoundingClientRect();
+      const pos = getGridPosition(n);
+      const cellWidth = rect.width / 10;
+      const cellHeight = rect.height / 10;
+
+      const x = pos.col * cellWidth + cellWidth / 2;
+      const y = pos.row * cellHeight + cellHeight / 2;
+      return { x, y };
+    }
+
+    function drawOverlays() {
+      const rect = boardWrapper.getBoundingClientRect();
+      overlay.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+      overlay.innerHTML = "";
+
+      // 미끄럼 그리기
+      Object.entries(jumps).forEach(([fromStr, to]) => {
+        const from = Number(fromStr);
+        if (from > to) {
+          drawSlide(from, to);
+        }
+      });
+
+      // 사다리 그리기
+      Object.entries(jumps).forEach(([fromStr, to]) => {
+        const from = Number(fromStr);
+        if (from < to) {
+          drawLadder(from, to);
+        }
+      });
+    }
+
+    function drawLadder(from, to) {
+      const a = getCellCenter(from);
+      const b = getCellCenter(to);
+
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy);
+      const nx = -dy / len;
+      const ny = dx / len;
+      const offset = 10;
+
+      const x1 = a.x + nx * offset;
+      const y1 = a.y + ny * offset;
+      const x2 = b.x + nx * offset;
+      const y2 = b.y + ny * offset;
+
+      const x3 = a.x - nx * offset;
+      const y3 = a.y - ny * offset;
+      const x4 = b.x - nx * offset;
+      const y4 = b.y - ny * offset;
+
+      const rail1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      rail1.setAttribute("x1", x1);
+      rail1.setAttribute("y1", y1);
+      rail1.setAttribute("x2", x2);
+      rail1.setAttribute("y2", y2);
+      rail1.setAttribute("stroke", "#6b4f2c");
+      rail1.setAttribute("stroke-width", "4");
+      overlay.appendChild(rail1);
+
+      const rail2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      rail2.setAttribute("x1", x3);
+      rail2.setAttribute("y1", y3);
+      rail2.setAttribute("x2", x4);
+      rail2.setAttribute("y2", y4);
+      rail2.setAttribute("stroke", "#6b4f2c");
+      rail2.setAttribute("stroke-width", "4");
+      overlay.appendChild(rail2);
+
+      const rungCount = Math.max(3, Math.floor(len / 28));
+      for (let i = 1; i < rungCount; i++) {
+        const t = i / rungCount;
+        const rx1 = x1 + (x2 - x1) * t;
+        const ry1 = y1 + (y2 - y1) * t;
+        const rx2 = x3 + (x4 - x3) * t;
+        const ry2 = y3 + (y4 - y3) * t;
+
+        const rung = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        rung.setAttribute("x1", rx1);
+        rung.setAttribute("y1", ry1);
+        rung.setAttribute("x2", rx2);
+        rung.setAttribute("y2", ry2);
+        rung.setAttribute("stroke", "#8d6a3a");
+        rung.setAttribute("stroke-width", "3");
+        overlay.appendChild(rung);
+      }
+    }
+
+    function drawSlide(from, to) {
+      const a = getCellCenter(from);
+      const b = getCellCenter(to);
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const cx1 = a.x + (b.x - a.x) * 0.25;
+      const cy1 = a.y + 10;
+      const cx2 = a.x + (b.x - a.x) * 0.75;
+      const cy2 = b.y - 10;
+
+      path.setAttribute(
+        "d",
+        `M ${a.x} ${a.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${b.x} ${b.y}`
+      );
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "#27c4f5");
+      path.setAttribute("stroke-width", "16");
+      path.setAttribute("stroke-linecap", "round");
+      overlay.appendChild(path);
+
+      const stripe = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      stripe.setAttribute(
+        "d",
+        `M ${a.x} ${a.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${b.x} ${b.y}`
+      );
+      stripe.setAttribute("fill", "none");
+      stripe.setAttribute("stroke", "#ffd84d");
+      stripe.setAttribute("stroke-width", "5");
+      stripe.setAttribute("stroke-dasharray", "14 10");
+      stripe.setAttribute("stroke-linecap", "round");
+      overlay.appendChild(stripe);
+    }
+
+    function placeTokens() {
+      const c1 = getCellCenter(game.positions[0]);
+      const c2 = getCellCenter(game.positions[1]);
+
+      token1.style.left = `calc(${(c1.x / boardWrapper.clientWidth) * 100}% - 8px)`;
+      token1.style.top = `calc(${(c1.y / boardWrapper.clientHeight) * 100}% - 8px)`;
+
+      token2.style.left = `calc(${(c2.x / boardWrapper.clientWidth) * 100}% + 8px)`;
+      token2.style.top = `calc(${(c2.y / boardWrapper.clientHeight) * 100}% + 8px)`;
+    }
+
+    function updateUI() {
+      pos1Text.textContent = game.positions[0];
+      pos2Text.textContent = game.positions[1];
+
+      const current = game.currentPlayer + 1;
+      turnText.textContent = game.ended
+        ? "게임 종료"
+        : `현재 턴: 플레이어 ${current}`;
+
+      playerCard1.classList.toggle("active", game.currentPlayer === 0 && !game.ended);
+      playerCard2.classList.toggle("active", game.currentPlayer === 1 && !game.ended);
+    }
+
+    function addLog(text) {
+      const item = document.createElement("div");
+      item.className = "log-item";
+      item.textContent = text;
+      log.prepend(item);
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function rollDice() {
+      return Math.floor(Math.random() * 6) + 1;
+    }
+
+    async function animateMove(playerIndex, from, to) {
+      const step = from < to ? 1 : -1;
+      for (let p = from + step; step > 0 ? p <= to : p >= to; p += step) {
+        game.positions[playerIndex] = p;
+        placeTokens();
+        updateUI();
+        await sleep(280);
+      }
+    }
+
+    async function handleTurn() {
+      if (game.isAnimating || game.ended) return;
+
+      game.isAnimating = true;
+      rollBtn.disabled = true;
+
+      const player = game.currentPlayer;
+      const playerName = `플레이어 ${player + 1}`;
+      const dice = rollDice();
+
+      diceFace.textContent = dice;
+      diceText.textContent = `${playerName}이(가) ${dice}을(를) 굴렸습니다.`;
+
+      const currentPos = game.positions[player];
+      let nextPos = currentPos + dice;
+
+      if (nextPos > 100) {
+        addLog(`${playerName}: ${dice}이 나왔지만 100을 초과해서 제자리입니다.`);
+        await sleep(600);
+      } else {
+        addLog(`${playerName}: ${currentPos} → ${nextPos} (${dice}칸 이동)`);
+        await animateMove(player, currentPos, nextPos);
+
+        if (jumps[nextPos]) {
+          const target = jumps[nextPos];
+          const isLadder = target > nextPos;
+
+          if (isLadder) {
+            addLog(`${playerName}: 사다리! ${nextPos} → ${target}`);
+          } else {
+            addLog(`${playerName}: 미끄럼! ${nextPos} → ${target}`);
+          }
+
+          await sleep(400);
+          await animateMove(player, nextPos, target);
+          nextPos = target;
+        }
+
+        if (nextPos === 100) {
+          game.ended = true;
+          addLog(`🎉 ${playerName} 승리!`);
+          turnText.textContent = `${playerName} 승리!`;
+          diceText.textContent = `${playerName}이(가) 게임에서 이겼습니다!`;
+          rollBtn.disabled = true;
+          game.isAnimating = false;
+          updateUI();
+          return;
+        }
+      }
+
+      game.currentPlayer = game.currentPlayer === 0 ? 1 : 0;
+      game.isAnimating = false;
+      rollBtn.disabled = false;
+      updateUI();
+    }
+
+    function resetGame() {
+      game = {
+        positions: [1, 1],
+        currentPlayer: 0,
+        isAnimating: false,
+        ended: false
+      };
+
+      diceFace.textContent = "🎲";
+      diceText.textContent = "주사위를 굴려 주세요.";
+      log.innerHTML = "";
+      addLog("새 게임이 시작되었습니다.");
+      updateUI();
+      placeTokens();
+      rollBtn.disabled = false;
+    }
+
+    function init() {
+      createBoard();
+      drawOverlays();
+      resetGame();
+    }
+
+    rollBtn.addEventListener("click", handleTurn);
+    resetBtn.addEventListener("click", resetGame);
+
+    window.addEventListener("resize", () => {
+      drawOverlays();
+      placeTokens();
+    });
+
+    init();
+  </script>
+</body>
+</html>
