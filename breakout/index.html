@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080c1d">
+  <meta name="description" content="아이템과 영구 업그레이드로 진화하는 네온 벽돌깨기. 2D·3D, 멀티볼, 레이저, 보스 스테이지를 즐기세요.">
+  <title>NEON BREAKER — PLAYROOM</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <header class="game-header">
+      <a class="back-link" href="../">← PLAYROOM</a>
+      <div class="title-copy"><p class="eyebrow">BREAK. COLLECT. EVOLVE.</p><h1>NEON <span>BREAKER</span></h1></div>
+      <div class="best-card"><span>PERSONAL BEST</span><strong id="best-score">0</strong></div>
+    </header>
+    <div class="game-layout">
+      <section id="arena-wrap" class="arena-wrap" aria-label="네온 벽돌깨기 플레이 화면">
+        <div id="canvas-host" class="canvas-host" tabindex="0" aria-label="게임 보드. 좌우 방향키로 패들 이동, 스페이스로 발사 및 레이저, Esc로 일시정지."></div>
+        <div class="stage-hud">
+          <div class="hud-stat"><span>STAGE</span><strong id="stage-value">01</strong></div>
+          <div class="hud-stat hud-score"><span>SCORE</span><strong id="score-value">0</strong></div>
+          <div class="hud-stat"><span>LIVES</span><strong id="lives-value">♥ ♥ ♥</strong></div>
+        </div>
+        <div class="stage-controls">
+          <div class="view-switch" role="group" aria-label="게임 화면 모드"><button id="view-2d" type="button" aria-pressed="true">2D</button><button id="view-3d" type="button" aria-pressed="false">3D</button></div>
+          <button id="sound-button" type="button" aria-pressed="true" title="효과음 켜기/끄기">♫ 소리</button>
+          <button id="pause-button" type="button" disabled>Ⅱ 정지</button>
+          <button id="fullscreen-button" type="button" aria-pressed="false" title="전체화면 보기">⛶ 전체화면</button>
+        </div>
+        <div id="combo-banner" class="combo-banner" hidden><strong id="combo-value">2</strong><span>COMBO</span></div>
+        <div id="pickup-toast" class="pickup-toast" role="status" aria-live="polite" hidden></div>
+        <div id="launch-prompt" class="launch-prompt" hidden>클릭 / Space로 공을 발사하세요</div>
+        <button id="fire-button" class="fire-button" type="button" aria-label="공 발사, 누르고 있으면 레이저 발사">발사 · 레이저</button>
+        <div class="stage-footer"><span id="board-progress">SYSTEM READY</span><span id="mode-status" role="status">2D · NEON ENGINE</span></div>
+        <div id="game-overlay" class="game-overlay">
+          <div class="overlay-card">
+            <p id="overlay-eyebrow" class="eyebrow">READY TO EVOLVE?</p>
+            <h2 id="overlay-title">벽돌을 넘어,<br><span>플레이를 진화시키세요.</span></h2>
+            <p id="overlay-description">빛나는 아이템을 잡고 강해지세요.<br>스테이지를 클리어할 때마다 나만의 빌드를 선택합니다.</p>
+            <div id="upgrade-choices" class="upgrade-choices" hidden></div>
+            <button id="play-button" class="primary-button" type="button">플레이 시작 →</button>
+            <p id="overlay-hint" class="overlay-hint">마우스·터치로 패들 이동 / Space 발사 / Esc 정지</p>
+          </div>
+        </div>
+      </section>
+      <aside class="side-panel">
+        <section class="panel mission-panel"><p class="eyebrow">YOUR NEXT EVOLUTION</p><h2 id="mission-title">첫 번째 균열</h2><p id="mission-description">모든 벽돌을 깨고 새로운 강화 능력을 선택하세요. 3스테이지마다 보스가 기다립니다.</p><div class="mission-tags"><span>2D ↔ 3D 실시간 전환</span><span>3스테이지마다 보스</span></div></section>
+        <section class="panel"><div class="panel-heading"><h2>활성 아이템</h2><span id="active-count">0 ACTIVE</span></div><div id="active-effects" class="active-effects"><p class="muted">떨어지는 아이템을 패들로 받으세요.</p></div></section>
+        <section class="panel"><div class="panel-heading"><h2>나만의 빌드</h2><span>EVOLUTIONS</span></div><div id="build-list" class="build-list"><p class="muted">클리어 후 강화 능력이 쌓입니다.</p></div></section>
+        <details class="panel item-guide" open><summary>아이템 도감 <span>7 POWER-UPS</span></summary><div id="item-guide-list" class="item-guide-list"></div></details>
+        <section class="panel control-panel"><h2>플레이 가이드</h2><p><kbd>← →</kbd> / <kbd>A D</kbd> 패들 이동<br><kbd>Space</kbd> 공·레이저 발사<br><kbd>Esc</kbd> 일시정지 / 계속하기<br>마우스 이동·터치 드래그로도 조작</p><label class="motion-option"><input id="reduce-effects" type="checkbox"> 화면 흔들림·효과 줄이기</label><button id="restart-button" class="secondary-button" type="button">↻ 새 게임</button></section>
+      </aside>
+    </div>
+    <p class="page-note">연속 타격으로 콤보를 유지하세요. 장갑 벽돌, 폭발 벽돌, 움직이는 벽돌과 보스가 플레이를 바꿉니다.</p>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
