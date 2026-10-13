@@ -97,34 +97,34 @@ export function createRenderer(container, { reducedMotion = false } = {}) {
   }
   function createMap(mapId){
     releaseMap();
-    const map=MAPS.find(item=>item.id===mapId)||MAPS[0];const theme=THEMES[map.id]||THEMES.forest;
-    mapRoot=new THREE.Group();mapRoot.userData.kind='map';mapRoot.userData.mapId=map.id;scene.add(mapRoot);
+    const map=MAPS.find(item=>item.id===mapId)||MAPS[0];const themeId=map.theme||map.id;const theme=THEMES[themeId]||THEMES.forest;
+    mapRoot=new THREE.Group();mapRoot.userData.kind='map';mapRoot.userData.mapId=map.id;mapRoot.userData.theme=themeId;mapRoot.userData.difficulty=map.difficulty;scene.add(mapRoot);
     mapResources={geometries:new Set(),materials:new Set()};
     const mg=value=>{mapResources.geometries.add(value);return value;};
     const mm=value=>{mapResources.materials.add(value);return value;};
     const mapBox=mg(new THREE.BoxGeometry(1,1,1));const mapSphere=mg(new THREE.SphereGeometry(1,9,7));
     const mapCone=mg(new THREE.ConeGeometry(1,2,7));
-    scene.background=new THREE.Color(theme.sky);scene.fog=new THREE.Fog(theme.fog,55,map.id==='star'?220:165);
-    sun.color.set(theme.sun);sun.intensity=map.id==='star'?1.8:2.3;hemi.color.set(map.id==='star'?'#bcc6ff':'#ffffff');
+    scene.background=new THREE.Color(theme.sky);scene.fog=new THREE.Fog(theme.fog,55,themeId==='star'?220:165);
+    sun.color.set(theme.sun);sun.intensity=themeId==='star'?1.8:2.3;hemi.color.set(themeId==='star'?'#bcc6ff':'#ffffff');
     const vertices=[],indices=[],colors=[],edgeLeft=[],edgeRight=[],centers=[];
     const segments=384;const half=map.width/2;
     const roadColor=new THREE.Color(theme.road),stripeColor=new THREE.Color(theme.road).lerp(new THREE.Color('#ffffff'),0.16);
     for(let index=0;index<=segments;index++){
-      const point=sampleTrack(map.id,index/segments);const normalX=Math.cos(point.yaw),normalZ=-Math.sin(point.yaw);
+      const point=sampleTrack(map.id,index/segments);const normalX=-Math.cos(point.yaw),normalZ=Math.sin(point.yaw);
       const left=new THREE.Vector3(point.x-normalX*half,0.02,point.z-normalZ*half);
       const right=new THREE.Vector3(point.x+normalX*half,0.02,point.z+normalZ*half);
       edgeLeft.push(left);edgeRight.push(right);centers.push(point);
       vertices.push(left.x,left.y,left.z,right.x,right.y,right.z);
       const c=Math.floor(index/6)%2?roadColor:stripeColor;colors.push(c.r,c.g,c.b,c.r,c.g,c.b);
-      if(index<segments){const n=index*2;indices.push(n,n+2,n+1,n+1,n+2,n+3);}
+      if(index<segments){const n=index*2;indices.push(n,n+1,n+2,n+1,n+3,n+2);}
     }
     const ribbon=mg(new THREE.BufferGeometry());ribbon.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));ribbon.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));ribbon.setIndex(indices);ribbon.computeVertexNormals();
-    const road=mesh(ribbon,mm(new THREE.MeshStandardMaterial({vertexColors:true,roughness:map.id==='star'?0.45:0.75,metalness:map.id==='star'?0.25:0.03,side:THREE.DoubleSide})),mapRoot);road.receiveShadow=true;road.userData.kind='track';
-    const edgeMaterial=mm(new THREE.MeshStandardMaterial({color:theme.edge,emissive:theme.edge,emissiveIntensity:map.id==='star'?0.85:0.25,roughness:0.4}));
+    const road=mesh(ribbon,mm(new THREE.MeshStandardMaterial({vertexColors:true,roughness:themeId==='star'?0.45:0.75,metalness:themeId==='star'?0.25:0.03,side:THREE.DoubleSide})),mapRoot);road.receiveShadow=true;road.userData.kind='track';
+    const edgeMaterial=mm(new THREE.MeshStandardMaterial({color:theme.edge,emissive:theme.edge,emissiveIntensity:themeId==='star'?0.85:0.25,roughness:0.4}));
     [edgeLeft,edgeRight].forEach(points=>{points.forEach(point=>point.y=0.18);mesh(mg(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),384,0.13,6,false)),edgeMaterial,mapRoot);});
     const bounds=new THREE.Box3().setFromBufferAttribute(ribbon.attributes.position);const size=bounds.getSize(new THREE.Vector3());const center=bounds.getCenter(new THREE.Vector3());
-    if(map.id==='forest')mesh(mg(new THREE.PlaneGeometry(size.x+180,size.z+180)),mm(new THREE.MeshStandardMaterial({color:theme.ground,roughness:1})),mapRoot,center.x,-0.22,center.z).rotation.x=-Math.PI/2;
-    else if(map.id==='star')mesh(mg(new THREE.PlaneGeometry(size.x+260,size.z+260)),mm(new THREE.MeshStandardMaterial({color:theme.ground,roughness:0.85,metalness:0.3})),mapRoot,center.x,-4,center.z).rotation.x=-Math.PI/2;
+    if(themeId==='forest')mesh(mg(new THREE.PlaneGeometry(size.x+180,size.z+180)),mm(new THREE.MeshStandardMaterial({color:theme.ground,roughness:1})),mapRoot,center.x,-0.22,center.z).rotation.x=-Math.PI/2;
+    else if(themeId==='star')mesh(mg(new THREE.PlaneGeometry(size.x+260,size.z+260)),mm(new THREE.MeshStandardMaterial({color:theme.ground,roughness:0.85,metalness:0.3})),mapRoot,center.x,-4,center.z).rotation.x=-Math.PI/2;
     const finishPoint=sampleTrack(map.id,0);
     const finish=new THREE.Group();finish.userData.kind='finish';finish.position.set(finishPoint.x,0.05,finishPoint.z);finish.rotation.y=finishPoint.yaw;mapRoot.add(finish);
     const white=mm(new THREE.MeshBasicMaterial({color:'#fffaf2'})),dark=mm(new THREE.MeshBasicMaterial({color:'#40385a'}));
@@ -137,9 +137,9 @@ export function createRenderer(container, { reducedMotion = false } = {}) {
       mesh(mapBox,index===0?white:dark,gate,0,5.58,0.36,map.width*0.55,0.85,0.09);
       rainbowMaterials.forEach((_,n)=>mesh(mapBox,mm(new THREE.MeshBasicMaterial({color:RAINBOW[n]})),gate,(n-2.5)*map.width/12,5.57,0.43,map.width/12,0.55,0.05));
     });
-    function batch(shape,appearance,count){const object=new THREE.InstancedMesh(shape,appearance,count);mapRoot.add(object);return object;}
+    function batch(shape,appearance,count){const object=new THREE.InstancedMesh(shape,appearance,count);object.userData.kind="scenery";object.userData.theme=themeId;mapRoot.add(object);return object;}
     const count=120;
-    if(map.id==='forest'){
+    if(themeId==='forest'){
       const trunks=batch(mapBox,mm(new THREE.MeshStandardMaterial({color:'#8b6955',roughness:1})),count);
       const crowns=batch(mapCone,mm(new THREE.MeshStandardMaterial({color:'#52916f',roughness:0.9})),count);
       for(let index=0;index<count;index++){
@@ -149,7 +149,7 @@ export function createRenderer(container, { reducedMotion = false } = {}) {
         transform.position.y=4.2;transform.scale.set(2.5+(index%3)*0.4,2.8,2.5);transform.updateMatrix();crowns.setMatrixAt(index,transform.matrix);
       }
       trunks.castShadow=crowns.castShadow=true;
-    }else if(map.id==='cloud'){
+    }else if(themeId==='cloud'){
       const clouds=batch(mapSphere,mm(new THREE.MeshStandardMaterial({color:'#f9f6ff',roughness:1})),count*3);
       for(let index=0;index<count;index++){
         const point=sampleTrack(map.id,index/count);const side=index%2?1:-1;const offset=half+8+(index%7)*3;

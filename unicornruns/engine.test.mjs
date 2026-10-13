@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAPS, sampleTrack, createGame } from './engine.js';
+import { MAPS, DIFFICULTIES, sampleTrack, createGame } from './engine.js';
 
 const almost = (a, b, tolerance = 1e-6) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 function frames(game, seconds, input = {}) {
@@ -10,10 +10,17 @@ function ready(id = 'forest') { const game = createGame(); game.selectMap(id); g
 function cross(a, b, c) { return (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x); }
 function intersects(a, b, c, d) { return cross(a, b, c) * cross(a, b, d) < -1e-9 && cross(c, d, a) * cross(c, d, b) < -1e-9; }
 
-test('three distinct maps have exact lap goals and smooth closed noncrossing geometry', () => {
-  assert.equal(MAPS.length, 3); assert.equal(new Set(MAPS.map(map => map.id)).size, 3);
-  assert.deepEqual(MAPS.map(map => map.laps), [1, 2, 3]);
-  assert.equal(new Set(MAPS.map(map => Math.round(map.length))).size, 3);
+test('thirty distinct maps have ten courses per tier and smooth closed noncrossing geometry', () => {
+  assert.equal(MAPS.length, 30); assert.equal(new Set(MAPS.map(map => map.id)).size, 30);
+  assert.deepEqual(DIFFICULTIES.map(tier => tier.id), ['easy', 'medium', 'hard']);
+  for (const [index, difficulty] of DIFFICULTIES.entries()) {
+    const maps = MAPS.filter(map => map.difficulty === difficulty.id);
+    assert.equal(maps.length, 10); assert.ok(maps.every(map => map.laps === index + 1));
+    assert.deepEqual(maps.map(map => map.courseIndex), Array.from({ length: 10 }, (_, i) => i + 1));
+  }
+  assert.deepEqual(['forest', 'cloud', 'star'].map(id => MAPS.find(map => map.id === id).laps), [1, 2, 3]);
+  assert.equal(new Set(MAPS.map(map => map.length.toFixed(5))).size, 30);
+  assert.equal(new Set(MAPS.map(map => JSON.stringify(map.points))).size, 30);
   for (const map of MAPS) {
     assert.ok(map.name && map.description && map.color && map.length > 200 && map.width >= 8);
     const first = sampleTrack(map.id, 0), last = sampleTrack(map.id, 1);
@@ -152,4 +159,32 @@ test('changing frame rates preserves race timer and stable course results', () =
     assert.equal(game.state.phase, 'finished'); times.push(game.state.elapsed);
   }
   assert.ok(Math.max(...times) - Math.min(...times) < .03);
+});
+
+
+test('right steering is positive along the chase camera right vector on every course', () => {
+  for (const map of MAPS) {
+    for (const steer of [-1, 1]) {
+      const game = ready(map.id);
+      frames(game, .4, { throttle: 1, steer });
+      const player = game.state.player, center = sampleTrack(map.id, player.progress);
+      const screenRight = { x: -Math.cos(center.yaw), z: Math.sin(center.yaw) };
+      const projection = (player.x - center.x) * screenRight.x + (player.z - center.z) * screenRight.z;
+      assert.ok(projection * steer > 0, `${map.id} steer ${steer} projects in the wrong screen direction`);
+      almost(projection, player.lateral);
+    }
+  }
+});
+
+test('course variations change intrinsic shape instead of only rotating an existing map', () => {
+  const signatures = MAPS.map(map => {
+    const points = Array.from({ length: 64 }, (_, index) => sampleTrack(map.id, index / 64));
+    // Rotation/translation/scale invariant ratios of distances between sampled course points.
+    const distances = points.map((point, index) => {
+      const opposite = points[(index + 16) % points.length];
+      return (Math.hypot(opposite.x - point.x, opposite.z - point.z) / map.length).toFixed(5);
+    });
+    return distances.join(',');
+  });
+  assert.equal(new Set(signatures).size, 30);
 });

@@ -2,11 +2,51 @@
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const SAMPLE_COUNT = 1024;
-const definitions = [
+const representativeCourses = [
   { id: 'forest', name: '숲속 오솔길', laps: 1, color: '#77e9a5', description: '초록 숲을 가로지르는 넓고 부드러운 1랩 코스.', width: 10, points: [[0, -44], [32, -32], [45, 0], [30, 35], [0, 42], [-38, 30], [-49, 0], [-31, -33]] },
   { id: 'cloud', name: '구름 위 드라이브', laps: 2, color: '#83d8ff', description: '구름 위를 크게 돌아 나오는 긴 2랩 코스.', width: 9, points: [[0, -52], [38, -48], [61, -16], [55, 20], [28, 45], [-10, 50], [-52, 28], [-61, -12], [-38, -43]] },
   { id: 'star', name: '별빛 은하수', laps: 3, color: '#d5a0ff', description: '둥근 별 모양 커브를 따라 달리는 3랩 코스.', width: 8, points: Array.from({ length: 12 }, (_, index) => { const angle = -Math.PI / 2 + index * Math.PI / 6, radius = index % 2 ? 46 : 65; return [Math.cos(angle) * radius * 1.05, Math.sin(angle) * radius * .88]; }) }
 ];
+// Ten playable layouts in each tier; geometry varies in size, aspect and bends.
+export const DIFFICULTIES = Object.freeze([
+  Object.freeze({ id: 'easy', name: '초급', description: '넓은 숲길에서 즐기는 1랩 달리기.', laps: 1, color: '#77e9a5' }),
+  Object.freeze({ id: 'medium', name: '중급', description: '긴 구름 코스에서 즐기는 2랩 달리기.', laps: 2, color: '#83d8ff' }),
+  Object.freeze({ id: 'hard', name: '고급', description: '다양한 별빛 커브에 도전하는 3랩 달리기.', laps: 3, color: '#d5a0ff' })
+]);
+const COURSE_NAMES = [
+  ['숲속 오솔길', '이슬 호수길', '버섯 마을 산책로', '꽃잎 바람길', '새싹 언덕', '반딧불 연못', '고요한 솔숲', '나비 정원', '황금잎 둘레길', '초록 무지개길'],
+  ['구름 위 드라이브', '솜사탕 회랑', '푸른 하늘 고리', '햇살 구름 곡선', '바람의 산책길', '새벽 안개 도로', '비행선 둘레길', '저녁 노을 링', '오로라 구름길', '천상의 물결길'],
+  ['별빛 은하수', '혜성 꼬리 회랑', '유성 폭포 곡선', '달그림자 고리', '토성의 리본', '성운 소용돌이', '북극성 궤도', '수정별 회랑', '은빛 우주 물결', '초신성 서킷']
+];
+function generatedCoursePoints(tier, courseIndex) {
+  const count = (tier === 2 ? 10 : 8) + ((courseIndex + tier) % 3) * 2;
+  const radius = [44, 55, 62][tier] + (courseIndex - 1) * 1.15;
+  const phase = courseIndex * .73 + tier * .41;
+  const amplitude = [.055, .09, .14][tier] + (courseIndex % 3) * .008;
+  const secondary = [.035, .05, .07][tier];
+  const aspectX = [1.05, 1.12, 1.02][tier] + Math.sin(courseIndex * 1.2) * .055;
+  const aspectZ = [.87, .89, .94][tier] + Math.cos(courseIndex * .9) * .055;
+  return Array.from({ length: count }, (_, index) => {
+    const baseAngle = -Math.PI / 2 + index * Math.PI * 2 / count;
+    const angle = baseAngle + Math.sin(baseAngle * 2 + phase) * .035;
+    const variation = 1 + Math.sin(baseAngle * (2 + courseIndex % 3) + phase) * amplitude + Math.cos(baseAngle * (5 + courseIndex % 2) - phase) * secondary;
+    return [Math.cos(angle) * radius * variation * aspectX, Math.sin(angle) * radius * variation * aspectZ];
+  });
+}
+const definitions = DIFFICULTIES.flatMap((difficulty, tier) => {
+  const representative = representativeCourses[tier];
+  return Array.from({ length: 10 }, (_, index) => {
+    const courseIndex = index + 1;
+    return {
+      ...representative,
+      id: index === 0 ? representative.id : `${representative.id}-${String(courseIndex).padStart(2, '0')}`,
+      name: COURSE_NAMES[tier][index], difficulty: difficulty.id,
+      theme: representative.id, courseIndex,
+      description: index === 0 ? representative.description : `${difficulty.name} ${courseIndex}번 코스 · ${difficulty.laps}랩. 코스마다 서로 다른 크기와 곡선을 달립니다.`,
+      points: index === 0 ? representative.points : generatedCoursePoints(tier, courseIndex)
+    };
+  });
+});
 function splinePoint(points, progress) {
   const location = progress * points.length, index = Math.floor(location) % points.length, t = location - Math.floor(location);
   const at = offset => points[(index + offset + points.length) % points.length];
@@ -46,8 +86,8 @@ export function createGame() {
   };
   function syncWorldPosition() {
     const sample = sampleTrack(state.mapId, state.player.progress);
-    state.player.x = sample.x + Math.cos(sample.yaw) * state.player.lateral;
-    state.player.z = sample.z - Math.sin(sample.yaw) * state.player.lateral;
+    state.player.x = sample.x - Math.cos(sample.yaw) * state.player.lateral;
+    state.player.z = sample.z + Math.sin(sample.yaw) * state.player.lateral;
     state.player.yaw = sample.yaw;
   }
   function resetRace(phase) {

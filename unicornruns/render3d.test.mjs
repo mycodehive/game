@@ -53,16 +53,54 @@ function assertTrack(root,map){
   assert.equal(root.children.find(node=>node.userData.kind==='gates').children.length,4);
   assert.equal(root.children.find(node=>node.userData.kind==='finish').children.length,20);
 }
+assert.equal(MAPS.length,30,'ten courses per difficulty');
+for(const difficulty of ['easy','medium','hard'])assert.equal(MAPS.filter(map=>map.difficulty===difficulty).length,10);
+for(const theme of ['forest','cloud','star'])assert.equal(MAPS.filter(map=>map.theme===theme).length,10);
 assertTrack(mapRoot,MAPS[0]);
+const uniqueRoads=new Set([Array.from(mapRoot.children.find(node=>node.userData.kind==='track').geometry.attributes.position.array).join(',')]);
 const rootCount=gpu.scene.children.length;let mapsDisposed=0;
 for(const map of MAPS.slice(1)){
   const oldRoot=mapRoot;const ownedGeo=new Set(),ownedMat=new Set();let dg=0,dm=0;
   oldRoot.traverse(node=>{if(node.geometry)ownedGeo.add(node.geometry);if(node.material)(Array.isArray(node.material)?node.material:[node.material]).forEach(m=>ownedMat.add(m));});
   ownedGeo.forEach(value=>value.addEventListener('dispose',()=>dg++));ownedMat.forEach(value=>value.addEventListener('dispose',()=>dm++));
   game.selectMap(map.id);view.render(game.state,[],0);mapRoot=gpu.scene.children.find(node=>node.userData.kind==='map');
-  assert.equal(oldRoot.parent,null);assert.equal(dg,ownedGeo.size);assert.equal(dm,ownedMat.size);assert.equal(gpu.scene.children.length,rootCount);assert.equal(mapRoot.userData.mapId,map.id);assertTrack(mapRoot,map);mapsDisposed++;
+  assert.equal(oldRoot.parent,null);assert.equal(dg,ownedGeo.size);assert.equal(dm,ownedMat.size);assert.equal(gpu.scene.children.length,rootCount);assert.equal(mapRoot.userData.mapId,map.id);assert.equal(mapRoot.userData.theme,map.theme);assert.equal(mapRoot.userData.difficulty,map.difficulty);assertTrack(mapRoot,map);uniqueRoads.add(Array.from(mapRoot.children.find(node=>node.userData.kind==='track').geometry.attributes.position.array).join(','));
+  const scenery=mapRoot.children.filter(node=>node.userData.kind==='scenery');assert.ok(scenery.length>0);assert.ok(scenery.every(node=>node.userData.theme===map.theme));
+  if(map.theme==='forest')assert.equal(scenery.length,2);else assert.equal(scenery.length,1);
+  if(map.theme==='cloud')assert.equal(scenery[0].count,360);
+  if(map.theme==='star')assert.equal(scenery[0].geometry.type,'OctahedronGeometry');
+  mapsDisposed++;
 }
-assert.equal(mapsDisposed,2);
+assert.equal(mapsDisposed,29);
+assert.equal(uniqueRoads.size,30,'all courses have distinct rendered ribbon geometry');
+
+// Regression: actual engine RIGHT/LEFT input must move to the corresponding
+// projected screen side through the actual third-person renderer camera. World
+// X alone cannot determine this while the runner turns around a closed course.
+const steeringGame=createGame();
+let steeringChecks=0;
+for(const map of MAPS){
+  steeringGame.state.phase='select';steeringGame.selectMap(map.id);
+  for(const [w,h] of [[500,700],[960,540]]){
+    container.bounds.width=w;container.bounds.height=h;view.resize();
+    for(const progress of [0,0.13,0.32,0.51,0.73,0.94])for(const steer of [-1,1]){
+      const s=steeringGame.state;const point=sampleTrack(map.id,progress);
+      s.phase='racing';Object.assign(s.player,{...point,progress,lateral:0,speed:12});
+      view.render(s,[],0);
+      steeringGame.update(1/60,{throttle:true,steer});
+      view.render(s,[],1/60);
+      const center=sampleTrack(map.id,s.player.progress);
+      const actual=new THREE.Vector3(s.player.x,0,s.player.z).project(gpu.camera);
+      const trackCenter=new THREE.Vector3(center.x,0,center.z).project(gpu.camera);
+      assert.ok(s.player.lateral*steer>0,`${map.id}: physical steering sign`);
+      assert.ok((actual.x-trackCenter.x)*steer>1e-5,`${map.id} progress${progress} ${w}x${h}: ${steer>0?'RIGHT':'LEFT'} projects to correct screen side`);
+      steeringChecks++;
+    }
+  }
+}
+assert.equal(steeringChecks,720);
+// Restore the main test's selected course after projection checks.
+view.render(game.state,[],0);mapRoot=gpu.scene.children.find(node=>node.userData.kind==='map');
 const state=game.state;state.phase='racing';state.player.progress=0.22;state.player.speed=28;Object.assign(state.player,sampleTrack(state.mapId,state.player.progress));
 view.render(state,[{type:'race-start',x:state.player.x,z:state.player.z}],0.05);
 const oldLegAngle=legs[0].rotation.x;view.render(state,[],0.05);assert.notEqual(legs[0].rotation.x,oldLegAngle,'legs gallop at running speed');
@@ -82,4 +120,4 @@ const geos=new Set(),mats=new Set();let dg=0,dm=0;gpu.scene.traverse(node=>{if(n
 const renders=gpu.count;let prevented=false;view.canvas.listeners.get('webglcontextlost')({preventDefault(){prevented=true;}});assert.ok(prevented);assert.equal(container.events[0].type,'unicornruns:render-error');view.render(state,[],1/60);assert.equal(gpu.count,renders);view.dispose();view.dispose();assert.equal(gpu.disposed,1);assert.equal(container.children.length,0);assert.equal(dg,geos.size);assert.equal(dm,mats.size);
 const quiet=context.createRenderer(new Element(),{reducedMotion:true});state.phase='racing';quiet.render(state,[],0.05);const quietGPU=renderers[1];assert.equal(quietGPU.scene.children.find(node=>node.isInstancedMesh).count,40);const qb=quietGPU.scene.children.find(node=>node.userData.kind==='unicorn').children.find(node=>node.userData.kind==='body');assert.equal(qb.position.y,0);assert.ok(qb.children.filter(node=>node.userData.kind==='leg').every(node=>Math.abs(node.rotation.x)<=0.163));quiet.dispose();
 const fail=vm.createContext({MAPS,sampleTrack,THREE:{...THREE,WebGLRenderer:class{constructor(){throw new Error('GPU unavailable');}}},CustomEvent:CustomEventAdapter});vm.runInContext(executable,fail);const failed=new Element();assert.throws(()=>fail.createRenderer(failed),/GPU unavailable/);assert.equal(failed.children.length,0);
-console.log('Unicorn Runs 3D: real sampled ribbon widths, three themes, volumetric unicorn/gallop/horn/rainbow, following camera, bounded sparkles, map-resource cleanup, exact pause/reset, reduced motion and WebGL lifecycle passed.');
+console.log('Unicorn Runs 3D: 30 distinct tracks/10 per difficulty, 720 actual-engine chase-camera left/right checks, three themed scenery/resource lifecycles, volumetric unicorn/gallop/horn/rainbow, following camera, bounded sparkles, map-resource cleanup, exact pause/reset, reduced motion and WebGL lifecycle passed.');
