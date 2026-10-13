@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>사다리 어드벤처 — PLAYROOM</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="../assets/fullscreen.css">
 </head>
 <body>
   <div class="wrap">
@@ -13,7 +14,16 @@
 
     <div class="game-layout">
       <section class="board-area">
-        <div class="view-tools"><span id="viewStatus" role="status">2D 보드 준비 완료</span><button id="viewToggle" type="button" disabled>3D 준비 중</button><button id="rotateView" type="button" hidden>시점 회전 ↻</button></div><div id="stage3d" aria-label="사다리 3D 게임 보드" hidden></div><div class="board-wrapper" id="boardWrapper">
+        <div class="view-tools"><span id="viewStatus" role="status">2D 보드 준비 완료</span><button id="viewToggle" type="button" disabled>3D 준비 중</button><button id="rotateView" type="button" hidden>시점 회전 ↻</button><button id="board-fullscreen-btn" type="button" aria-pressed="false">⛶ 전체화면 보기</button></div>
+        <div id="board-play-surface" class="board-play-surface" tabindex="-1">
+          <div id="board-fullscreen-actions" class="board-fullscreen-actions" aria-label="전체화면 게임 조작" hidden>
+            <div id="fullscreen-turn-info" class="fullscreen-turn-info" role="status" aria-live="polite"></div>
+            <div class="fullscreen-button-row">
+              <button id="fullscreen-roll-btn" type="button" class="fullscreen-primary">주사위 굴리기</button>
+              <button id="fullscreen-exit-btn" type="button" aria-label="전체화면 닫기">⛶ 닫기</button>
+            </div>
+          </div>
+        <div id="stage3d" aria-label="사다리 3D 게임 보드" hidden></div><div class="board-wrapper" id="boardWrapper">
           <div class="board" id="board"></div>
           <svg class="overlay" id="overlay"></svg>
           <div class="token-layer" id="tokenLayer">
@@ -22,6 +32,7 @@
           </div>
           <div class="start-label">출발</div>
           <div class="finish-label">도착</div>
+        </div>
         </div>
       </section>
 
@@ -153,6 +164,7 @@
     }
 
     function drawOverlays() {
+      if (boardWrapper.hidden) return;
       const rect = boardWrapper.getBoundingClientRect();
       overlay.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
       overlay.innerHTML = "";
@@ -267,6 +279,7 @@
 
     function placeTokens() {
       window.dispatchEvent(new CustomEvent("ladder-state", { detail: { positions: [...game.positions], currentPlayer: game.currentPlayer, ended: game.ended } }));
+      if (boardWrapper.hidden) return;
       const c1 = getCellCenter(game.positions[0]);
       const c2 = getCellCenter(game.positions[1]);
 
@@ -416,5 +429,6 @@
     init();
   </script>
   <script type="module" src="scene.js"></script>
+  <script type="module" src="fullscreen.js"></script>
 </body>
 </html>

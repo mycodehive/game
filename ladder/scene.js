@@ -73,7 +73,8 @@ function init() {
   function animate(time) {
     requestAnimationFrame(animate); const dt = Math.min((time - last) / 1000, .05); last = time;
     if (!visible || document.hidden) return;
-    camera.position.set(Math.sin(angle) * 11, 13, Math.cos(angle) * 11); camera.lookAt(0, 0, 0);
+    const fit = Math.max(1, 1 / camera.aspect);
+    camera.position.set(Math.sin(angle) * 11 * fit, 13 * fit, Math.cos(angle) * 11 * fit); camera.lookAt(0, 0, 0);
     pieces.forEach(piece => piece.group.position.lerp(piece.target, 1 - Math.exp(-12 * dt)));
     renderer.render(scene, camera);
   }

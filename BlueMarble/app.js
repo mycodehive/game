@@ -78,7 +78,6 @@ function cacheDom() {
   dom.cityArrivalClose = document.getElementById("city-arrival-close");
   dom.cityBuyBtn = document.getElementById("city-buy-btn");
   dom.cityPassBtn = document.getElementById("city-pass-btn");
-  dom.cityEndBtn = document.getElementById("city-end-btn");
   dom.cityBuildHouseBtn = document.getElementById("city-build-house-btn");
   dom.cityBuildBuildingBtn = document.getElementById("city-build-building-btn");
   dom.cityBuildHotelBtn = document.getElementById("city-build-hotel-btn");
@@ -87,7 +86,6 @@ function cacheDom() {
   dom.rollBtn = document.getElementById("roll-btn");
   dom.buyBtn = document.getElementById("buy-btn");
   dom.passBtn = document.getElementById("pass-btn");
-  dom.endTurnBtn = document.getElementById("end-turn-btn");
 }
 
 function bindEvents() {
@@ -109,7 +107,6 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || /INPUT|SELECT|TEXTAREA|BUTTON/.test(event.target.tagName) || !dom.cityArrivalModal.hidden || !dom.ownedCitiesModal.hidden) return;
     if (event.code === "Space" && !dom.rollBtn.disabled) { event.preventDefault(); dom.rollBtn.click(); }
-    if (event.key === "Enter" && !dom.endTurnBtn.disabled) { event.preventDefault(); dom.endTurnBtn.click(); }
   });
   dom.playerCount.addEventListener("change", renderNameInputs);
   dom.playersList.addEventListener("click", (event) => {
@@ -151,10 +148,6 @@ function bindEvents() {
     passCurrentCity();
     render();
   });
-  dom.endTurnBtn.addEventListener("click", () => {
-    endTurn();
-    render();
-  });
 
   dom.cityArrivalClose.addEventListener("click", closeCityArrivalModal);
   dom.cityArrivalModal.addEventListener("click", (event) => {
@@ -172,11 +165,6 @@ function bindEvents() {
   });
   dom.cityPassBtn.addEventListener("click", () => {
     passCurrentCity();
-    closeCityArrivalModal();
-    render();
-  });
-  dom.cityEndBtn.addEventListener("click", () => {
-    endTurn();
     closeCityArrivalModal();
     render();
   });
@@ -209,7 +197,7 @@ function renderNameInputs() {
 }
 
 function initGame() {
-  if (gameState.isAnimating) return;
+  if (gameState.isAnimating || ["moving", "resolving"].includes(gameState.phase)) return;
   selectedTileId = null;
   const selectedCount = Number(dom.playerCount.value);
   const count = Math.min(CONFIG.MAX_PLAYERS, Math.max(CONFIG.MIN_PLAYERS, selectedCount));
@@ -240,7 +228,7 @@ function initGame() {
     isAnimating: false
   };
   closeOwnedCitiesModal();
-  closeCityArrivalModal();
+  hideCityArrivalModal();
   clearToasts();
 
   logAction(`게임 시작: ${players.map((p) => p.name).join(", ")} / 시작 자금 ${CONFIG.START_MONEY}`);
@@ -542,9 +530,20 @@ function openCityArrivalModal(playerId, tileId) {
   renderCityArrivalModal();
 }
 
-function closeCityArrivalModal() {
+function hideCityArrivalModal() {
   cityArrivalModal = { playerId: null, tileId: null };
   dom.cityArrivalModal.hidden = true;
+}
+
+function closeCityArrivalModal() {
+  const player = getCurrentPlayer();
+  const pendingChoice = player && player.id === cityArrivalModal.playerId && player.position === cityArrivalModal.tileId;
+  hideCityArrivalModal();
+  if (pendingChoice && !gameState.isAnimating) {
+    if (gameState.phase === "await_buy_decision") passCurrentCity();
+    else if (gameState.phase === "await_build_decision") finishTurn(player);
+  }
+  render();
 }
 
 function renderCityArrivalModal() {
@@ -556,7 +555,7 @@ function renderCityArrivalModal() {
   const player = findPlayerById(cityArrivalModal.playerId);
   const tile = tiles[cityArrivalModal.tileId];
   if (!player || !tile) {
-    closeCityArrivalModal();
+    hideCityArrivalModal();
     return;
   }
 
@@ -600,11 +599,10 @@ function renderCityArrivalModal() {
     !player.isBankrupt;
 
   const canPass = canBuy;
-  const canEnd = gameState.phase === "await_end_turn" && !gameState.isAnimating;
   const canBuildBase =
     tile.type === "CITY" &&
     tile.ownerId === player.id &&
-    gameState.phase === "await_end_turn" &&
+    gameState.phase === "await_build_decision" &&
     !gameState.isAnimating &&
     !player.isBankrupt;
   const buildings = getCityBuildings(tile);
@@ -614,7 +612,7 @@ function renderCityArrivalModal() {
 
   dom.cityBuyBtn.disabled = !canBuy;
   dom.cityPassBtn.disabled = !canPass;
-  dom.cityEndBtn.disabled = !canEnd;
+  dom.cityArrivalClose.textContent = canBuy ? "구매 안 함" : gameState.phase === "await_build_decision" ? "선택 완료" : "닫기";
   dom.cityBuildHouseBtn.disabled = !canBuildHouse;
   dom.cityBuildBuildingBtn.disabled = !canBuildBuilding;
   dom.cityBuildHotelBtn.disabled = !canBuildHotel;
@@ -633,47 +631,35 @@ function renderLog() {
 
 function updateActionButtons() {
   const phase = gameState.phase;
-  const busy = gameState.isAnimating;
+  const busy = gameState.isAnimating || ["moving", "resolving"].includes(phase);
   dom.startBtn.disabled = busy;
   dom.startBtn.textContent = phase === "setup" ? "게임 시작 →" : "새 게임 시작";
-  const hints = { setup: "이름을 정하고 게임을 시작하세요.", await_roll: "주사위를 굴려 다음 도시로 이동하세요.", await_buy_decision: "도시를 구매하거나 패스하세요.", await_end_turn: "현재 도시에 건설하거나 턴을 종료하세요.", game_over: "게임 종료! 새 게임으로 다시 도전하세요." };
+  const hints = { setup: "이름을 정하고 게임을 시작하세요.", await_roll: "주사위를 굴려 다음 도시로 이동하세요.", await_buy_decision: "도시를 구매하거나 패스하세요.", await_build_decision: "건물을 선택하세요. 선택 완료를 누르면 다음 플레이어로 넘어갑니다.", game_over: "게임 종료! 새 게임으로 다시 도전하세요." };
   document.getElementById("action-hint").textContent = busy ? "도시로 이동 중입니다…" : hints[phase] || "";
   dom.rollBtn.disabled = busy || phase !== "await_roll";
   dom.buyBtn.disabled = busy || phase !== "await_buy_decision";
   dom.passBtn.disabled = busy || phase !== "await_buy_decision";
-  dom.endTurnBtn.disabled = busy || phase !== "await_end_turn";
 }
 
 async function rollDice() {
-  if (gameState.phase !== "await_roll") {
-    return null;
-  }
-  closeCityArrivalModal();
-
+  if (gameState.phase !== "await_roll" || gameState.isAnimating) return null;
+  hideCityArrivalModal();
   const player = getCurrentPlayer();
-  if (!player || player.isBankrupt) {
-    return null;
-  }
-
+  if (!player || player.isBankrupt) return null;
   const d1 = Math.floor(Math.random() * 6) + 1;
   const d2 = Math.floor(Math.random() * 6) + 1;
   const sum = d1 + d2;
   gameState.lastRoll = { d1, d2, sum };
-
-  logAction(`${player.name}: 주사위 ${d1}+${d2}=${sum}`);
+  gameState.phase = "moving";
   gameState.isAnimating = true;
+  logAction(`${player.name}: 주사위 ${d1}+${d2}=${sum}`);
   render();
   await movePlayer(player, sum);
   gameState.isAnimating = false;
-
-  if (player.isBankrupt) {
-    if (!checkWinCondition()) {
-      gameState.phase = "await_end_turn";
-    }
-    return { d1, d2, sum };
-  }
-
-  await resolveTile(player);
+  gameState.phase = "resolving";
+  if (player.isBankrupt) finishTurn(player);
+  else await resolveTile(player);
+  render();
   return { d1, d2, sum };
 }
 
@@ -708,111 +694,78 @@ async function movePlayer(player, steps) {
 }
 
 async function resolveTile(player) {
-  if (!player || player.isBankrupt) {
-    return;
-  }
-
+  if (!player || player.id !== getCurrentPlayer()?.id || gameState.isAnimating || gameState.phase === "game_over") return;
+  gameState.phase = "resolving";
+  if (player.isBankrupt) { finishTurn(player); return; }
   const tile = tiles[player.position];
-  if (!tile) {
-    gameState.phase = "await_end_turn";
-    return;
-  }
-
+  if (!tile) { finishTurn(player); return; }
   logAction(`${player.name}: ${tile.name} 도착 [${tile.type}]`);
-
   switch (tile.type) {
-    case "START":
-      gameState.phase = "await_end_turn";
-      break;
-
-    case "CITY":
+    case "CITY": {
+      const owner = findPlayerById(tile.ownerId);
+      if (tile.ownerId && (!owner || owner.isBankrupt)) {
+        tile.ownerId = null;
+        logAction(`${tile.name}: 소유자 정보 정리(은행 반환)`);
+      }
       if (!tile.ownerId) {
         if (player.money >= tile.price) {
           gameState.phase = "await_buy_decision";
           logAction(`${player.name}: ${tile.name} 구매 여부 선택`);
-        } else {
-          gameState.phase = "await_end_turn";
-          logAction(`${player.name}: ${tile.name} 구매 불가(자금 부족)`);
+          openCityArrivalModal(player.id, tile.id);
+          render();
+          return;
         }
+        logAction(`${player.name}: ${tile.name} 구매 불가(자금 부족)`);
       } else if (tile.ownerId === player.id) {
-        gameState.phase = "await_end_turn";
         logAction(`${player.name}: 본인 소유 도시`);
-      } else {
-        const owner = findPlayerById(tile.ownerId);
-        if (owner && !owner.isBankrupt) {
-          const currentRent = getCurrentRent(tile);
-          notifyMessage(`${player.name}: ${owner.name} 소유 지역에 도착! 임대료 ${currentRent} 지불`);
-          payRent(player, owner, currentRent);
-        } else {
-          tile.ownerId = null;
-          if (player.money >= tile.price) {
-            gameState.phase = "await_buy_decision";
-            logAction(`${tile.name}: 소유자 정보 정리(은행 반환), 구매 여부 선택`);
-          } else {
-            gameState.phase = "await_end_turn";
-            logAction(`${tile.name}: 소유자 정보 정리(은행 반환)`);
-          }
+        if (hasAvailableBuilding(player, tile)) {
+          gameState.phase = "await_build_decision";
+          openCityArrivalModal(player.id, tile.id);
+          render();
+          return;
         }
+      } else {
+        const rent = getCurrentRent(tile);
+        notifyMessage(`${player.name}: ${owner.name} 소유 지역에 도착! 임대료 ${rent} 지불`);
+        payRent(player, owner, rent);
       }
-      openCityArrivalModal(player.id, tile.id);
       break;
-
+    }
     case "EVENT":
       await drawEventCard(player);
       return;
-
     case "TAX":
-      if (consumeCard(player, "tax_exempt")) {
-        logAction(`${player.name}: 세금 면제 카드 사용`);
-      } else {
-        adjustMoney(player, -CONFIG.TAX_AMOUNT, `세금 납부 ${CONFIG.TAX_AMOUNT}`);
-      }
-      if (gameState.phase !== "game_over") {
-        gameState.phase = "await_end_turn";
-      }
+      if (consumeCard(player, "tax_exempt")) logAction(`${player.name}: 세금 면제 카드 사용`);
+      else adjustMoney(player, -CONFIG.TAX_AMOUNT, `세금 납부 ${CONFIG.TAX_AMOUNT}`);
       break;
-
     case "ISLAND":
-      if (consumeCard(player, "island_immunity")) {
-        logAction(`${player.name}: 무인도 회피 카드 사용`);
-      } else {
-        player.skipTurns += 1;
-        logAction(`${player.name}: 무인도 - 다음 턴 스킵`);
-      }
-      if (gameState.phase !== "game_over") {
-        gameState.phase = "await_end_turn";
-      }
+      if (consumeCard(player, "island_immunity")) logAction(`${player.name}: 무인도 회피 카드 사용`);
+      else { player.skipTurns += 1; logAction(`${player.name}: 무인도 - 다음 턴 스킵`); }
       break;
-
     default:
-      gameState.phase = "await_end_turn";
       break;
   }
+  finishTurn(player);
+}
 
-  checkWinCondition();
+function hasAvailableBuilding(player, tile) {
+  if (!player || !tile || tile.type !== "CITY" || tile.ownerId !== player.id) return false;
+  const buildings = getCityBuildings(tile);
+  return Object.entries(BUILD_RULES).some(([type, rule]) => !buildings[type] && player.money >= rule.cost);
 }
 
 function buyCurrentCity(player) {
-  if (gameState.phase !== "await_buy_decision") {
-    return;
-  }
-
+  if (!player || player.id !== getCurrentPlayer()?.id || player.isBankrupt || gameState.isAnimating || gameState.phase !== "await_buy_decision") return;
   const tile = tiles[player.position];
-  if (!tile || tile.type !== "CITY" || tile.ownerId) {
-    return;
-  }
-
+  if (!tile || tile.type !== "CITY" || tile.ownerId) return;
   if (player.money < tile.price) {
     logAction(`${player.name}: ${tile.name} 구매 실패(자금 부족)`);
-    gameState.phase = "await_end_turn";
+    finishTurn(player);
     return;
   }
-
   tile.ownerId = player.id;
   adjustMoney(player, -tile.price, `${tile.name} 구매(${tile.price})`);
-  if (gameState.phase !== "game_over") {
-    gameState.phase = "await_end_turn";
-  }
+  finishTurn(player);
 }
 
 function buildCurrentCity(structureType) {
@@ -822,7 +775,7 @@ function buildCurrentCity(structureType) {
   }
 
   const player = getCurrentPlayer();
-  if (!player || player.isBankrupt || gameState.phase !== "await_end_turn") {
+  if (!player || player.isBankrupt || gameState.isAnimating || gameState.phase !== "await_build_decision") {
     return;
   }
 
@@ -846,20 +799,13 @@ function buildCurrentCity(structureType) {
   adjustMoney(player, -rule.cost, `${tile.name} ${rule.label} 건설(${rule.cost})`);
   logAction(`${player.name}: ${tile.name}에 ${rule.label} 건설, 현재 임대료 ${getCurrentRent(tile)}`);
   notifyMessage(`${player.name}: ${tile.name}에 ${rule.label}을(를) 건설했습니다. 현재 임대료 ${getCurrentRent(tile)}`);
+  if (!hasAvailableBuilding(player, tile)) finishTurn(player);
   render();
 }
 
 function payRent(player, owner, rent) {
   adjustMoney(player, -rent, `${owner.name}에게 임대료 지불(${rent})`);
-  if (!owner.isBankrupt) {
-    adjustMoney(owner, rent, `${player.name}에게서 임대료 수령(${rent})`);
-  }
-
-  if (gameState.phase !== "game_over") {
-    gameState.phase = "await_end_turn";
-  }
-
-  checkWinCondition();
+  if (!owner.isBankrupt) adjustMoney(owner, rent, `${player.name}에게서 임대료 수령(${rent})`);
 }
 
 async function drawEventCard(player) {
@@ -877,9 +823,7 @@ async function drawEventCard(player) {
     return;
   }
 
-  if (!checkWinCondition() && gameState.phase !== "game_over") {
-    gameState.phase = "await_end_turn";
-  }
+  finishTurn(player);
 }
 
 async function applyEventEffect(player, card) {
@@ -887,13 +831,14 @@ async function applyEventEffect(player, card) {
 
   switch (effect.type) {
     case "move":
+      gameState.phase = "moving";
       gameState.isAnimating = true;
       render();
       await movePlayer(player, effect.value);
       gameState.isAnimating = false;
-      if (!player.isBankrupt) {
-        await resolveTile(player);
-      }
+      gameState.phase = "resolving";
+      if (player.isBankrupt) finishTurn(player);
+      else await resolveTile(player);
       return true;
 
     case "pay_half_total_rent":
@@ -911,37 +856,22 @@ async function applyEventEffect(player, card) {
 }
 
 function passCurrentCity() {
-  if (gameState.phase !== "await_buy_decision") {
-    return;
-  }
-
+  if (gameState.phase !== "await_buy_decision" || gameState.isAnimating) return;
   const player = getCurrentPlayer();
-  if (!player) {
-    return;
-  }
-
+  if (!player) return;
   const tile = tiles[player.position];
-  if (tile && tile.type === "CITY" && !tile.ownerId) {
-    logAction(`${player.name}: ${tile.name} 구매 패스`);
-  }
-
-  gameState.phase = "await_end_turn";
+  if (tile && tile.type === "CITY" && !tile.ownerId) logAction(`${player.name}: ${tile.name} 구매 패스`);
+  finishTurn(player);
 }
 
-function endTurn() {
-  if (gameState.phase !== "await_end_turn") {
-    return;
+// Internal completion, called only after a landing or a city decision resolves.
+function finishTurn(player) {
+  if (!player || player.id !== getCurrentPlayer()?.id || gameState.isAnimating || !["resolving", "await_buy_decision", "await_build_decision"].includes(gameState.phase)) return;
+  hideCityArrivalModal();
+  if (!checkWinCondition()) {
+    if (!moveToNextActivePlayer()) checkWinCondition();
   }
-  closeCityArrivalModal();
-
-  if (checkWinCondition()) {
-    return;
-  }
-
-  const moved = moveToNextActivePlayer();
-  if (!moved) {
-    checkWinCondition();
-  }
+  render();
 }
 
 function moveToNextActivePlayer() {
@@ -986,7 +916,7 @@ function checkWinCondition() {
   if (alive.length === 1 && players.length > 1) {
     gameState.phase = "game_over";
     gameState.winnerId = alive[0].id;
-    closeCityArrivalModal();
+    hideCityArrivalModal();
     logAction(`승리: ${alive[0].name} (마지막 생존)`);
     return true;
   }
@@ -1225,8 +1155,12 @@ function phaseLabel(phase) {
       return "주사위 대기";
     case "await_buy_decision":
       return "구매 선택";
-    case "await_end_turn":
-      return "턴 종료 대기";
+    case "await_build_decision":
+      return "건설 선택";
+    case "moving":
+      return "이동 중";
+    case "resolving":
+      return "도착 처리";
     case "game_over":
       return "게임 종료";
     default:
@@ -1265,6 +1199,6 @@ function renderTileInspector() {
   document.getElementById("tile-inspector-info").textContent = tile.type === "CITY" ? `가격 ${tile.price.toLocaleString("ko-KR")} · 임대 ${getCurrentRent(tile)} · ${owner ? owner.name : "은행"} 소유 · ${formatBuildings(tile)}` : labels[tile.type];
   const current = getCurrentPlayer();
   const action = document.getElementById("inspect-action");
-  action.hidden = !current || current.position !== selectedTileId || tile.type !== "CITY" || gameState.isAnimating || !["await_buy_decision", "await_end_turn"].includes(gameState.phase);
+  action.hidden = !current || current.position !== selectedTileId || tile.type !== "CITY" || gameState.isAnimating || !["await_buy_decision", "await_build_decision"].includes(gameState.phase);
 }
 window.BlueMarbleGame = Object.freeze({ getSnapshot: getSceneSnapshot, inspectTile });

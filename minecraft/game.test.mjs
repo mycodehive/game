@@ -51,7 +51,10 @@ const context = vm.createContext({
 vm.runInContext(source.replace(/^import .*?;\n/, '') + `\nglobalThis.quest = {
   game, player, crystals, entities, dom, attackState, keys,
   startGame, togglePause, resumeGame, updateMission, performAttack,
-  damagePlayer, updateSelectedCharacter, resolveObstacles, animate
+  damagePlayer, updateSelectedCharacter, resolveObstacles, animate, advanceMission,
+  worldBounds, isAccessiblePosition, scene,
+  get campaignRoot() { return campaignRoot; },
+  get batches() { return batches; }
 };`, context);
 const q = context.quest;
 assert.equal(q.game.phase, 'ready');
@@ -120,4 +123,93 @@ assert.equal(q.player.health, q.player.maxHealth);
 const position = new three.Vector3(0,0,3);
 q.resolveObstacles(position, new three.Vector3(0,0,4));
 assert.equal(position.z, 3.3, 'house remains solid');
-console.log('Voxel Quest: initialization, classes, pause, collection, portal win, timeout, health loss, combat, animal safety, reset and collision checks passed.');
+// A campaign advances only from a completed mission; retries retain its map.
+function completeMission() {
+  q.crystals.forEach(crystal => {
+    if (crystal.collected) return;
+    q.player.group.position.set(crystal.mesh.position.x,0,crystal.mesh.position.z);
+    q.updateMission();
+  });
+  assert.equal(q.game.collected,q.game.crystalTarget);
+  q.player.group.position.set(0,0,5);
+  q.updateMission();
+  assert.equal(q.game.phase,'won');
+}
+function expectStage(level,side,gems,enemies,seconds) {
+  assert.equal(q.game.stage,level);
+  assert.equal(q.game.side,side);
+  assert.equal(q.game.crystalTarget,gems);
+  assert.equal(q.game.sentinelTarget,enemies);
+  assert.equal(q.game.duration,seconds);
+  assert.equal(q.crystals.length,gems);
+  assert.equal(q.entities.filter(e=>e.type==='sentinel').length,enemies);
+  assert.equal(q.worldBounds.minX,-side/2);
+  assert.equal(q.worldBounds.maxX,side/2);
+  assert.equal(q.worldBounds.minZ,-side/2);
+  assert.equal(q.worldBounds.maxZ,side/2);
+  assert.equal(q.campaignRoot.userData.ground.geometry.parameters.width,side*3);
+  assert.equal(q.batches.gems.count,gems);
+  assert.equal(q.batches.bodies.count,enemies);
+  assert.equal(q.dom.missionGoal.textContent,`빛나는 조각 ${gems}개를 수집`);
+  q.crystals.forEach(crystal=> {
+    const {x,z}=crystal.mesh.position;
+    assert.ok(x>q.worldBounds.minX && x<q.worldBounds.maxX);
+    assert.ok(z>q.worldBounds.minZ && z<q.worldBounds.maxZ);
+    assert.ok(q.isAccessiblePosition(x,z),'every shard has an accessible position');
+  });
+}
+expectStage(1,40,8,3,120);
+q.advanceMission();
+assert.equal(q.game.stage,1,'unfinished missions cannot advance');
+completeMission();
+const oldRoot=q.campaignRoot;
+const ownedGeometries=new Set();
+const ownedMaterials=new Set();
+let disposedGeometries=0;
+let disposedMaterials=0;
+oldRoot.traverse(node=> {
+  if(node.geometry) ownedGeometries.add(node.geometry);
+  if(node.material) (Array.isArray(node.material)?node.material:[node.material]).forEach(m=>ownedMaterials.add(m));
+});
+ownedGeometries.forEach(g=>g.addEventListener('dispose',()=>disposedGeometries++));
+ownedMaterials.forEach(m=>m.addEventListener('dispose',()=>disposedMaterials++));
+const rootSceneCount=q.scene.children.length;
+q.dom.start.listeners.get('click')();
+expectStage(2,60,12,5,150);
+assert.equal(oldRoot.parent,null,'previous map removed from scene');
+assert.equal(q.scene.children.length,rootSceneCount,'stage advance does not leak scene roots');
+assert.equal(disposedGeometries,ownedGeometries.size,'all old geometry disposed once');
+assert.equal(disposedMaterials,ownedMaterials.size,'all old materials disposed once');
+assert.ok(q.entities.filter(e=>e.type==='sentinel').every(e=>e.maxHealth===108));
+const stage2Root=q.campaignRoot;
+q.player.group.position.set(q.crystals[0].mesh.position.x,0,q.crystals[0].mesh.position.z);
+q.updateMission();
+assert.ok(q.game.collected>0);
+q.startGame();
+expectStage(2,60,12,5,150);
+assert.equal(q.campaignRoot,stage2Root,'retry restores rather than advances/regenerates current map');
+assert.equal(q.game.collected,0);
+assert.ok(q.crystals.every(c=>c.mesh.visible&&!c.collected));
+q.game.remaining=0;
+q.updateMission();
+assert.equal(q.game.phase,'lost');
+q.advanceMission();
+assert.equal(q.game.stage,2,'failed mission cannot unlock a new stage');
+q.dom.start.listeners.get('click')();
+expectStage(2,60,12,5,150);
+assert.equal(q.game.phase,'playing');
+completeMission();
+q.dom.start.listeners.get('click')();
+expectStage(3,90,18,8,188);
+assert.equal(q.game.phase,'playing');
+assert.equal(q.game.remaining,188);
+assert.ok(q.entities.filter(e=>e.type==='sentinel').every(e=>e.maxHealth===116));
+q.togglePause();
+const stage3Time=q.game.remaining;
+q.animate();
+assert.equal(q.game.remaining,stage3Time);
+q.resumeGame();
+completeMission();
+assert.ok(q.dom.overlayDescription.textContent.includes('27개'));
+assert.ok(q.dom.overlayDescription.textContent.includes('12마리'));
+console.log('Voxel Quest: base gameplay plus stage 1→2→3 scaling, rounded counts, expanded bounds/terrain, accessibility, instance counts, win-only advance, same-stage retries, stronger enemies, stage pause and GPU-resource disposal checks passed.');

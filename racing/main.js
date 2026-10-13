@@ -39,6 +39,67 @@ const TRACKS = [
   { id: "night-needle", name: "Night Needle", difficulty: "pro", width: 10, laps: 4, spline: [[0,0,130],[40,0,120],[90,0,95],[120,0,55],[105,0,15],[65,0,-5],[95,0,-35],[125,0,-80],[85,0,-120],[20,0,-135],[-25,0,-115],[-65,0,-85],[-110,0,-95],[-130,0,-45],[-115,0,5],[-75,0,30],[-95,0,80],[-50,0,120]] }
 ];
 
+// Smooth polar circuits: each catalog entry has its own scale, eccentricity,
+// harmonic count, asymmetric corner rhythm and phase. Positive radii keep the
+// centerline a single closed route; fixed parameters keep records reproducible.
+function createCircuit(id, name, difficulty, index) {
+  const level = { beginner: 0, intermediate: 1, pro: 2 }[difficulty];
+  const rx = 100 + level * 34 + (index % 4) * 13 + Math.floor(index / 4) * 6;
+  const rz = 86 + level * 30 + ((index * 3) % 7) * 9;
+  const lobes = 2 + level + (index % 2);
+  const phase = index * 0.47 + level * 0.31;
+  const major = 0.045 + level * 0.06 + (index % 5) * 0.012;
+  const minor = 0.014 + level * 0.015 + (index % 3) * 0.008;
+  const asymmetry = 0.025 + ((index * 2) % 5) * 0.012;
+  const spline = Array.from({ length: 32 }, (_, point) => {
+    const angle = point / 32 * Math.PI * 2;
+    const radius = 1 + major * Math.sin(lobes * angle + phase)
+      + minor * Math.cos((lobes + 1) * angle - phase * 0.65)
+      + asymmetry * Math.cos(angle + phase * 0.4);
+    return [Number((Math.sin(angle) * rx * radius).toFixed(3)), 0,
+      Number((Math.cos(angle) * rz * radius).toFixed(3))];
+  });
+  return { id, name, difficulty, width: [14, 12, 10][level] + (index % 3 === 2 ? 1 : 0), laps: level === 2 ? 4 : 3, spline };
+}
+
+const EXTRA_CIRCUITS = {
+  beginner: [
+    ["meadow-cruise", "초원 크루즈"], ["coastal-breeze", "해안의 산들바람"],
+    ["willow-garden", "버드나무 정원"], ["golden-bay", "황금빛 만"],
+    ["lake-serenade", "호수 세레나데"], ["orchard-lane", "과수원 레인"],
+    ["blue-lagoon", "블루 라군"], ["maple-park", "단풍 공원"],
+    ["dawn-valley", "새벽 계곡"], ["prairie-glide", "대평원 글라이드"],
+    ["cloud-garden", "구름 정원"], ["seaside-stroll", "바닷가 산책"]
+  ],
+  intermediate: [
+    ["quarry-run", "채석장 러너"], ["amber-pass", "앰버 고개"],
+    ["forest-chicane", "숲속 시케인"], ["urban-ribbon", "도심 리본"],
+    ["marina-sprint", "마리나 스프린트"], ["redwood-rally", "레드우드 랠리"],
+    ["desert-wave", "사막의 물결"], ["silver-delta", "실버 델타"],
+    ["alpine-sweep", "알파인 스위프"], ["granite-gorge", "화강암 협곡"],
+    ["copper-coast", "구리빛 해안"], ["moonlit-estuary", "달빛 하구"],
+    ["cedar-spur", "삼나무 능선"], ["tidal-rush", "밀물 러시"],
+    ["glacier-bend", "빙하 벤드"], ["sapphire-ridge", "사파이어 릿지"]
+  ],
+  pro: [
+    ["viper-crown", "바이퍼 크라운"], ["obsidian-edge", "흑요석 에지"],
+    ["thunder-serpent", "천둥의 뱀"], ["neon-vortex", "네온 보텍스"],
+    ["phantom-crest", "팬텀 크레스트"], ["storm-forge", "폭풍의 용광로"],
+    ["razor-petal", "레이저 페탈"], ["eclipse-gauntlet", "이클립스 건틀릿"],
+    ["inferno-whorl", "인페르노 소용돌이"], ["frost-fang", "서리 송곳니"],
+    ["aurora-talons", "오로라 발톱"], ["titan-surge", "타이탄 서지"]
+  ]
+};
+for (const [difficulty, entries] of Object.entries(EXTRA_CIRCUITS)) {
+  entries.forEach(([id, name], index) => TRACKS.push(createCircuit(id, name, difficulty, index)));
+}
+
+const DIFFICULTIES = [
+  { id: "beginner", label: "초급", title: "넓은 도로와 부드러운 코너", description: "처음 시작한다면 여기서 레이싱 라인을 익혀보세요." },
+  { id: "intermediate", label: "중급", title: "연속 코너와 다양한 리듬", description: "정교한 조향과 적절한 부스트 타이밍에 도전하세요." },
+  { id: "pro", label: "고급", title: "좁은 도로와 날카로운 에이펙스", description: "4바퀴를 완주하며 한계까지 실력을 끌어올리세요." }
+];
+
 const CONTROL_PRESETS = {
   single: {
     label: "PLAYER 1",
@@ -350,6 +411,7 @@ class Game {
     this.started = false;
     this.finished = false;
     this.selectedMode = null;
+    this.selectedDifficulty = "beginner";
     this.resultOverlay = null;
     this.paused = false;
     this.raceToken = 0;
@@ -480,7 +542,7 @@ class Game {
     container.innerHTML = `
       <nav class="menu-nav"><a href="../index.html">← PLAYROOM</a><span class="status-pill">LIVE · 실시간 3D</span></nav>
       <div class="mode-layout">
-        <section class="mode-hero"><div class="eyebrow">APEX / RACING CLUB</div><h1 class="menu-title">코너를 넘어,<br><span>한계를 넘어.</span></h1><p class="menu-sub">엔진을 깨우고 나만의 레이싱 라인을 찾으세요.<br>10개의 서킷과 실제 차량 물리가 기다립니다.</p><div class="hero-car" aria-hidden="true"><div class="car-glow"></div><div class="car-body"><div class="car-window"></div><div class="car-stripe"></div></div><div class="car-wheel wheel-left"></div><div class="car-wheel wheel-right"></div><div class="speed-line line-one"></div><div class="speed-line line-two"></div></div><div class="hero-stats"><span><b>10</b>서킷</span><span><b>1–2</b>플레이어</span><span><b>3D</b>물리 주행</span></div></section>
+        <section class="mode-hero"><div class="eyebrow">APEX / RACING CLUB</div><h1 class="menu-title">코너를 넘어,<br><span>한계를 넘어.</span></h1><p class="menu-sub">엔진을 깨우고 나만의 레이싱 라인을 찾으세요.<br>50개의 서킷과 실제 차량 물리가 기다립니다.</p><div class="hero-car" aria-hidden="true"><div class="car-glow"></div><div class="car-body"><div class="car-window"></div><div class="car-stripe"></div></div><div class="car-wheel wheel-left"></div><div class="car-wheel wheel-right"></div><div class="speed-line line-one"></div><div class="speed-line line-two"></div></div><div class="hero-stats"><span><b>50</b>서킷</span><span><b>1–2</b>플레이어</span><span><b>3D</b>물리 주행</span></div></section>
         <section class="mode-panel"><div class="eyebrow">01 / 플레이 모드</div><h2>어떻게 달릴까요?</h2><p>이름을 입력하고 원하는 모드를 선택하세요.</p><label for="name-p1">플레이어 1 이름 <span>선택</span></label><input id="name-p1" class="menu-name-input" maxlength="14" placeholder="드라이버 1" autocomplete="nickname" /><label for="name-p2">플레이어 2 이름 <span>2인 모드 · 선택</span></label><input id="name-p2" class="menu-name-input" maxlength="14" placeholder="드라이버 2" />
           <div class="mode-buttons"><button class="menu-btn primary" id="one-player"><b>혼자 달리기 →</b><small>타임어택 · 터치 조작 지원</small></button><button class="menu-btn" id="two-player"><b>둘이 경쟁하기 →</b><small>한 화면, 두 드라이버 · 키보드 필요</small></button></div>
           <details class="control-guide"><summary>운전 조작 알아보기</summary><p><kbd>W</kbd> / <kbd>↑</kbd> 가속 · <kbd>S</kbd> / <kbd>↓</kbd> 브레이크·후진<br><kbd>A D</kbd> / <kbd>← →</kbd> 조향 · <kbd>Space</kbd> 드리프트<br><kbd>Q</kbd> 부스트 · <kbd>R</kbd> 차량 복구 · <kbd>Esc</kbd> 일시정지</p><p>2인: P1은 WASD / Space / Q / R,<br>P2는 방향키 / Numpad0 또는 / / 오른쪽 Shift / Enter.</p></details>
@@ -512,24 +574,54 @@ class Game {
     this.hudRoot.innerHTML = "";
     this.splitDivider.style.display = "none";
 
-    const sections = [
-      { id: "beginner", title: "01 / 입문 서킷 · 넓고 부드러운 코너" },
-      { id: "intermediate", title: "02 / 챌린저 · 정교한 레이싱 라인" },
-      { id: "pro", title: "03 / 프로 서킷 · 한계에 도전하기" }
-    ];
+    const sections = DIFFICULTIES;
 
     const container = document.createElement("div");
     container.className = "menu-overlay";
     container.innerHTML = `
       <nav class="menu-nav"><button class="tool-btn" id="back-mode">← 플레이 모드</button><span class="status-pill">${this.selectedMode}인 · ${this.selectedMode === 1 ? "타임어택" : "화면 분할 경쟁"}</span></nav>
-      <div class="track-heading"><div class="eyebrow">02 / PICK YOUR CIRCUIT</div><h1 class="menu-title">오늘의 서킷을 선택하세요.</h1><p class="menu-sub">트랙을 선택하면 3초 뒤 출발합니다. 첫 주행은 입문 서킷을 추천해요.</p></div>
+      <div class="track-heading"><div class="eyebrow">02 / PICK YOUR CIRCUIT</div><h1 class="menu-title">오늘의 서킷을 선택하세요.</h1><p class="menu-sub">총 50개 서킷. 난이도 탭에서 트랙을 선택하면 3초 뒤 출발합니다.</p></div>
     `;
+
+    const tablist = document.createElement("div");
+    tablist.className = "difficulty-tabs";
+    tablist.setAttribute("role", "tablist");
+    tablist.setAttribute("aria-label", "서킷 난이도 선택");
+    container.appendChild(tablist);
+    this.difficultyTabs = [];
 
     for (const sec of sections) {
       const wrap = document.createElement("section");
-      wrap.className = "menu-section";
+      wrap.className = "menu-section difficulty-panel";
+      wrap.id = `circuits-${sec.id}`;
+      wrap.setAttribute("role", "tabpanel");
+      wrap.setAttribute("aria-labelledby", `difficulty-${sec.id}`);
+      wrap.tabIndex = 0;
+      const tab = document.createElement("button");
+      tab.id = `difficulty-${sec.id}`;
+      tab.className = "difficulty-tab";
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", wrap.id);
+      tab.innerHTML = `${sec.label}<span class="difficulty-count">${TRACKS.filter((t) => t.difficulty === sec.id).length}</span>`;
+      tab.addEventListener("click", () => this.selectDifficulty(sec.id));
+      tab.addEventListener("keydown", (event) => {
+        const index = sections.findIndex((item) => item.id === sec.id);
+        let next;
+        if (event.key === "ArrowRight") next = (index + 1) % sections.length;
+        else if (event.key === "ArrowLeft") next = (index + sections.length - 1) % sections.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = sections.length - 1;
+        else return;
+        event.preventDefault();
+        this.selectDifficulty(sections[next].id, true);
+      });
+      tablist.appendChild(tab);
+      this.difficultyTabs.push({ id: sec.id, button: tab, panel: wrap });
       const h = document.createElement("h2");
-      h.textContent = sec.title;
+      h.textContent = `${sec.label} · ${sec.title}`;
+      const description = document.createElement("p");
+      description.className = "difficulty-description";
+      description.textContent = sec.description;
       const grid = document.createElement("div");
       grid.className = "menu-grid";
 
@@ -562,6 +654,7 @@ class Game {
       }
 
       wrap.appendChild(h);
+      wrap.appendChild(description);
       wrap.appendChild(grid);
       container.appendChild(wrap);
     }
@@ -569,6 +662,22 @@ class Game {
     this.menuRoot.innerHTML = "";
     this.menuRoot.appendChild(container);
     container.querySelector("#back-mode").addEventListener("click", () => this.buildModeMenu());
+    this.selectDifficulty(this.selectedDifficulty);
+  }
+
+  selectDifficulty(id, focus = false) {
+    if (!DIFFICULTIES.some((item) => item.id === id)) id = "beginner";
+    this.selectedDifficulty = id;
+    for (const entry of this.difficultyTabs || []) {
+      const selected = entry.id === id;
+      entry.button.setAttribute("aria-selected", String(selected));
+      entry.button.tabIndex = selected ? 0 : -1;
+      entry.panel.hidden = !selected;
+      if (selected && focus) {
+        entry.button.focus();
+        entry.button.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }
   }
 
   initHud() {
@@ -650,6 +759,7 @@ class Game {
     this.raceControls.classList.toggle("single-player", playerCount === 1);
     this.hudRoot.classList.toggle("split-mode", playerCount === 2);
     this.track = track;
+    this.selectedDifficulty = track.difficulty;
     this.playerCount = playerCount;
     this.started = false;
     this.finished = false;

@@ -6,15 +6,18 @@ import * as CANNON from './libs/cannon-es.js';
 
 // Exercise game code with real geometry/vehicle physics and a minimal DOM adapter.
 class Element {
-  constructor(tag = 'div') { this.tag = tag; this.style = {}; this.children = []; this.childElementCount = 0; this.dataset = {}; this.classList = { add() {}, remove() {}, toggle() {} }; }
+  constructor(tag = 'div') { this.tag = tag; this.attributes = new Map(); this.listeners = new Map(); this.queries = new Map(); this.style = {}; this.children = []; this.childElementCount = 0; this.dataset = {}; this.classList = { add() {}, remove() {}, toggle() {} }; }
   appendChild(node) { this.children.push(node); this.childElementCount = this.children.length; return node; }
   insertBefore(node) { this.appendChild(node); }
   remove() {}
-  setAttribute() {}
-  addEventListener() {}
-  querySelector() { return new Element(); }
+  set innerHTML(value) { this.html = value; this.children = []; this.childElementCount = 0; this.queries = new Map(); }
+  get innerHTML() { return this.html || ''; }
+  setAttribute(name, value) { this.attributes.set(name, value); }
+  addEventListener(name, callback) { this.listeners.set(name, callback); }
+  querySelector(selector) { if (!this.queries.has(selector)) this.queries.set(selector, new Element()); return this.queries.get(selector); }
   querySelectorAll() { return []; }
-  focus() {}
+  focus() { this.focused = true; }
+  scrollIntoView() {}
   closest() { return this.tag === 'input' ? this : null; }
   getContext() { return new Proxy({ createLinearGradient: () => ({ addColorStop() {} }) }, { get: (target, key) => key in target ? target[key] : () => {} }); }
 }
@@ -36,6 +39,59 @@ const context = vm.createContext({
 const source = fs.readFileSync(new URL('./main.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
 vm.runInContext(source.slice(0, source.indexOf('const loadingTextEl')) + '\nglobalThis.api = { Game, TRACKS, CONTROL_PRESETS, keys, getInput, escapeHtml, readLocalRecords };', context);
 const { Game, TRACKS, CONTROL_PRESETS, keys, getInput, escapeHtml, readLocalRecords } = context.api;
+
+// The original 10 remain, and each level now has exactly five times its count.
+assert.equal(TRACKS.length, 50);
+for (const [difficulty, expected] of [['beginner', 15], ['intermediate', 20], ['pro', 15]]) {
+  assert.equal(TRACKS.filter((track) => track.difficulty === difficulty).length, expected);
+}
+assert.equal(new Set(TRACKS.map((track) => track.id)).size, 50);
+assert.deepEqual(Array.from(TRACKS.slice(0, 10), (track) => track.id), ['oval-circuit', 'sunny-loop', 'riverside-ring', 'canyon-bends', 'harbor-dash', 'twin-curves', 'windmill-route', 'dragon-spine', 'apex-inferno', 'night-needle']);
+const signatures = new Set();
+const orient = (a, b, c) => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+const intersects = (a, b, c, d) => orient(a, b, c) * orient(a, b, d) < -1e-8 && orient(c, d, a) * orient(c, d, b) < -1e-8;
+for (const track of TRACKS) {
+  const curve = new THREE.CatmullRomCurve3(track.spline.map((point) => new THREE.Vector3(...point)), true, 'catmullrom', .5);
+  const samples = curve.getSpacedPoints(256);
+  assert.ok(samples.every((point) => [point.x, point.y, point.z].every(Number.isFinite)), `${track.id}: finite centerline`);
+  assert.ok(samples[0].distanceTo(samples.at(-1)) < .001, `${track.id}: closed route`);
+  assert.ok(curve.getLength() > 400, `${track.id}: real circuit length`);
+  for (let first = 0; first < 256; first++) {
+    for (let second = first + 2; second < 256; second++) {
+      if (first === 0 && second === 255) continue;
+      assert.ok(!intersects(samples[first], samples[first + 1], samples[second], samples[second + 1]), `${track.id}: centerline crossing`);
+    }
+  }
+  // Sorted, normalized chord lengths distinguish shapes even after rotation/scale.
+  const length = curve.getLength();
+  const chords = Array.from({ length: 32 }, (_, point) => samples[point * 8].distanceTo(samples[((point + 8) % 32) * 8]) / length).sort((a, b) => a - b);
+  const signature = chords.map((value) => value.toFixed(6)).join(',');
+  assert.ok(!signatures.has(signature), `${track.id}: duplicate rotated/scaled geometry`);
+  signatures.add(signature);
+}
+
+// Tabs show only their difficulty; ARIA selection, roving tabindex and key navigation agree.
+const menuGame = new Game(); menuGame.selectedMode = 1; menuGame.buildTrackMenu();
+assert.equal(menuGame.difficultyTabs.length, 3);
+const assertTabState = (difficulty) => {
+  assert.equal(menuGame.selectedDifficulty, difficulty);
+  for (const entry of menuGame.difficultyTabs) {
+    const selected = entry.id === difficulty;
+    assert.equal(entry.panel.hidden, !selected);
+    assert.equal(entry.button.attributes.get('aria-selected'), String(selected));
+    assert.equal(entry.button.tabIndex, selected ? 0 : -1);
+    assert.equal(entry.panel.children[2].children.length, TRACKS.filter((track) => track.difficulty === entry.id).length);
+  }
+};
+assertTabState('beginner');
+let keyPrevented = false;
+menuGame.difficultyTabs[0].button.listeners.get('keydown')({ key: 'ArrowRight', preventDefault() { keyPrevented = true; } });
+assert.ok(keyPrevented); assertTabState('intermediate'); assert.ok(menuGame.difficultyTabs[1].button.focused);
+menuGame.difficultyTabs[1].button.listeners.get('keydown')({ key: 'End', preventDefault() {} }); assertTabState('pro');
+menuGame.difficultyTabs[2].button.listeners.get('keydown')({ key: 'ArrowRight', preventDefault() {} }); assertTabState('beginner');
+menuGame.difficultyTabs[0].button.listeners.get('keydown')({ key: 'ArrowLeft', preventDefault() {} }); assertTabState('pro');
+menuGame.difficultyTabs[2].button.listeners.get('keydown')({ key: 'Home', preventDefault() {} }); assertTabState('beginner');
+menuGame.selectDifficulty('pro'); menuGame.buildModeMenu(); menuGame.selectedMode = 1; menuGame.buildTrackMenu(); assertTabState('pro');
 
 // Name input retains normal browser typing; blur never leaves throttle stuck.
 let prevented = false;
@@ -100,10 +156,31 @@ const before = player.chassisBody.position.clone(), beforeTime = player.raceTime
 game.loop(); assert.equal(player.chassisBody.position.distanceTo(before), 0); assert.equal(player.raceTime, beforeTime);
 game.setPaused(false); assert.equal(game.paused, false); assert.equal(keys.size, 0);
 
+// Every original and added catalog entry produces a full real 3D scene, physics
+// road/guardrails, race checkpoints, HUD and drivable four-wheel vehicle.
+const catalogGame = new Game();
+for (const track of TRACKS) {
+  catalogGame.setupRace(track, 1);
+  assert.equal(catalogGame.players.length, 1);
+  assert.equal(catalogGame.players[0].vehicle.wheelInfos.length, 4);
+  assert.equal(catalogGame.checkpoints.length, 4);
+  assert.equal(catalogGame.selectedDifficulty, track.difficulty);
+  assert.ok(catalogGame.physics.bodies.length > 100);
+  assert.ok(catalogGame.scene.children.length > 250);
+  const car = catalogGame.players[0];
+  for (let frame = 0; frame < 60; frame++) catalogGame.physics.step(1 / 60);
+  keys.add('KeyW');
+  for (let frame = 0; frame < 60; frame++) { catalogGame.applyInput(car, 1 / 60); catalogGame.physics.step(1 / 60); }
+  keys.clear();
+  assert.ok([car.chassisBody.position.x, car.chassisBody.position.y, car.chassisBody.position.z].every(Number.isFinite), `${track.id}: stable vehicle`);
+  assert.ok(Math.abs(catalogGame.getSpeed(car)) > 1, `${track.id}: vehicle accelerates`);
+}
+catalogGame.disposeScene();
+
 // Static hosting still stores valid local results when the optional API is absent.
 player.finishTime = 42; player.bestLap = 12;
 await game.saveRecord('test-track', player);
 assert.equal(readLocalRecords('test-track')[0].totalTimeMs, 42000);
 assert.equal((await game.fetchTrackTop5('test-track'))[0].player, '테스트');
 records.set('arcade-racing:broken', '{}'); assert.equal(readLocalRecords('broken').length, 0);
-console.log(`PASS racing: real Three/Cannon scene, ${distance.toFixed(1)}m driving, bidirectional ground contacts, full laps, keyboard typing/blur, boost, pause, safe names, local records`);
+console.log(`PASS racing: 50 distinct non-crossing circuits (15/20/15), difficulty tabs/keys/persistence, real Three/Cannon scene, ${distance.toFixed(1)}m driving, bidirectional ground contacts, full laps, keyboard typing/blur, boost, pause, safe names, local records`);

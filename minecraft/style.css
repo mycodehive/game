@@ -537,3 +537,11 @@ progress::-moz-progress-bar {
     font-size:12px;
   }
 }
+
+.mission-summary { margin: 0; padding: 0 20px 14px; font-size: 11px; color: var(--accent); line-height: 1.6; }
+.game-stats .stage-stat { min-width: 65px; }
+@media (max-width:760px) {
+  .mission-summary { padding: 0 12px 12px; font-size: 10px; }
+  .game-stats .stage-stat { min-width: 40px; }
+  .game-stats .stage-stat strong { font-size: 20px; }
+}

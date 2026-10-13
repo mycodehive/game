@@ -18,6 +18,7 @@ commands = [
     ['node', 'BlueMarble/game.test.cjs'],
     ['node', 'minecraft/game.test.mjs'],
     ['node', 'tests/boards.test.mjs'],
+    ['node', 'tests/fullscreen.test.cjs'],
     ['node', 'racing/game.test.mjs'],
 ]
 for command in commands: subprocess.run(command, cwd=root, check=True)

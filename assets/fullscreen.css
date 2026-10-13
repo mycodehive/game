@@ -1,0 +1,77 @@
+.board-play-surface { position: relative; }
+.board-fullscreen-actions { display: none; }
+.board-play-surface.is-board-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #091624;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.board-play-surface:fullscreen { position: relative; width: 100%; height: 100%; }
+.board-play-surface.is-board-fullscreen .board-fullscreen-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 1100;
+  max-width: calc(100% - 32px);
+  padding: 12px;
+  border: 1px solid #3e6575;
+  border-radius: 13px;
+  background: #0c1d2ef2;
+  box-shadow: 0 10px 36px #0005;
+}
+.fullscreen-turn-info { color: #cbeae9; font: 600 12px system-ui, sans-serif; }
+.fullscreen-button-row { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.board-fullscreen-actions button {
+  padding: 11px 14px;
+  border: 1px solid #3b5769;
+  border-radius: 8px;
+  background: #20364c;
+  color: #eaf7ff;
+  font: 600 12px system-ui, sans-serif;
+  cursor: pointer;
+}
+.board-fullscreen-actions button.fullscreen-primary { background: #6be2c2; border-color: #6be2c2; color: #0b302a; }
+.board-fullscreen-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.board-fullscreen-actions button:focus-visible { outline: 3px solid #a3ffe7; outline-offset: 3px; }
+.board-play-surface.is-board-fullscreen .scene-wrap,
+.board-play-surface.is-board-fullscreen .scene-3d,
+.board-play-surface.is-board-fullscreen #stage3d {
+  width: 100%; height: 100%; max-height: none; border-radius: 0;
+}
+.board-play-surface.is-board-fullscreen .scene-caption { top: auto; bottom: 75px; right: auto; }
+.board-play-surface.is-board-fullscreen #board,
+.board-play-surface.is-board-fullscreen #boardWrapper {
+  flex: none;
+  width: min(100vw, calc(100dvh - 140px));
+  height: min(100vw, calc(100dvh - 140px));
+  margin: 116px auto 24px;
+}
+.board-play-surface.is-board-fullscreen .board-cell { min-height: 0; }
+/* Blue Marble uses a grid; ladder's child grid should fill its own square. */
+.board-play-surface.is-board-fullscreen #boardWrapper #board {
+  width: auto; height: auto; margin: 0;
+}
+.board-play-surface.is-board-fullscreen .modal-overlay { z-index: 1000; }
+.board-play-surface.is-board-fullscreen .modal-card { max-height: calc(100dvh - 160px); margin-top: 104px; }
+@media (max-width: 540px) {
+  .board-play-surface.is-board-fullscreen .board-fullscreen-actions { top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); padding: 9px; gap: 7px; max-width: calc(100% - 16px); }
+  .board-fullscreen-actions button { font-size: 11px; padding: 10px; }
+  .fullscreen-turn-info { font-size: 11px; }
+  .board-play-surface.is-board-fullscreen .camera-controls { max-width: calc(100vw - 20px); flex-wrap: wrap; justify-content: center; }
+  .board-play-surface.is-board-fullscreen .modal-card { margin-top: 120px; max-height: calc(100dvh - 175px); }
+}
+[hidden] { display: none !important; }
