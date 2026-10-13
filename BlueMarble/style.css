@@ -466,10 +466,6 @@ input,select {
   border-color:var(--accent);
 }
 
-#end-turn-btn {
-  background:#243958;
-}
-
 .players-list {
   list-style:none;
   margin:0;
@@ -647,10 +643,6 @@ input,select {
 
 #city-buy-btn {
   background:#167e80;
-}
-
-#city-end-btn {
-  background:#28496c;
 }
 
 .city-info-lines {

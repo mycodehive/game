@@ -13,7 +13,9 @@ const dom = {
   message: document.getElementById("game-message"), overlay: document.getElementById("game-overlay"),
   overlayTitle: document.getElementById("overlay-title"), overlayDescription: document.getElementById("overlay-description"),
   overlayLabel: document.getElementById("overlay-label"), start: document.getElementById("start-button"),
-  pause: document.getElementById("pause-button"), restart: document.getElementById("restart-button")
+  pause: document.getElementById("pause-button"), restart: document.getElementById("restart-button"),
+  stage: document.getElementById("stage-number"), missionSummary: document.getElementById("mission-summary"),
+  missionGoal: document.getElementById("mission-goal"), stageTitle: document.getElementById("stage-title")
 };
 
 const characters = [
@@ -65,9 +67,16 @@ const clock = new THREE.Clock();
 const keys = new Set();
 const worldBounds = { minX: -20, maxX: 20, minZ: -20, maxZ: 20 };
 const entities = [];
+const treeObstacles = [];
 const crystals = [];
 const portalPosition = new THREE.Vector3(0, 0, 5);
-const game = { phase: "ready", remaining: 120, collected: 0, elapsed: 0 };
+const game = { phase: "ready", stage: 1, side: 40, crystalTarget: 8, sentinelTarget: 3, duration: 120, remaining: 120, collected: 0, elapsed: 0 };
+let campaignRoot;
+let batches = {};
+let sun;
+const instanceTransform = new THREE.Object3D();
+const instanceColor = new THREE.Color();
+const instanceOffset = new THREE.Vector3();
 let portal;
 const safeSpawn = new THREE.Vector3(0, 0, 5);
 
@@ -117,9 +126,7 @@ init();
 
 function init() {
   setupLights();
-  setupGround();
-  setupWorldObjects();
-  setupMission();
+  rebuildCampaignMap();
   setupPlayer();
   renderCharacterButtons();
   updateSelectedCharacter(player.selectedId);
@@ -132,7 +139,7 @@ function setupLights() {
   const hemi = new THREE.HemisphereLight("#bde8ff", "#5e8f43", 0.95);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight("#fff6d6", 1.22);
+  sun = new THREE.DirectionalLight("#fff6d6", 1.22);
   sun.position.set(16, 24, 10);
   sun.castShadow = true;
   sun.shadow.mapSize.width = 2048;
@@ -146,29 +153,65 @@ function setupLights() {
   scene.add(sun);
 }
 
+function rebuildCampaignMap() {
+  if (campaignRoot) {
+    // Release every stage-owned resource exactly once, including shared batches.
+    const geometries = new Set();
+    const materials = new Set();
+    campaignRoot.traverse((node) => {
+      if (node.geometry) geometries.add(node.geometry);
+      if (node.material) (Array.isArray(node.material) ? node.material : [node.material]).forEach(material => materials.add(material));
+      if (node.isInstancedMesh) node.dispose();
+    });
+    geometries.forEach(geometry => geometry.dispose());
+    materials.forEach(material => material.dispose());
+    scene.remove(campaignRoot);
+  }
+  campaignRoot = new THREE.Group();
+  scene.add(campaignRoot);
+  entities.length = 0;
+  treeObstacles.length = 0;
+  crystals.length = 0;
+  batches = {};
+  const half = game.side / 2;
+  Object.assign(worldBounds, { minX: -half, maxX: half, minZ: -half, maxZ: half });
+  scene.fog.near = 22 * (game.side / 40);
+  scene.fog.far = 75 * (game.side / 40);
+  camera.far = Math.max(180, game.side * 3);
+  camera.updateProjectionMatrix();
+  sun.shadow.camera.left = sun.shadow.camera.bottom = -half * 1.5;
+  sun.shadow.camera.right = sun.shadow.camera.top = half * 1.5;
+  sun.shadow.camera.far = Math.max(90, game.side * 3);
+  sun.shadow.camera.updateProjectionMatrix();
+  sun.position.set(game.side * 0.4, game.side * 0.6, game.side * 0.25);
+  setupGround();
+  setupWorldObjects();
+  setupMission();
+  syncMissionInstances();
+  updateMissionCopy();
+}
+
 function setupGround() {
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(120, 120),
-    new THREE.MeshStandardMaterial({ color: "#77b654" })
-  );
+  const terrainSize = game.side * 3;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(terrainSize, terrainSize), new THREE.MeshStandardMaterial({ color: "#77b654" }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
-  scene.add(ground);
-
-  const grid = new THREE.GridHelper(120, 60, "#6da252", "#70ab57");
+  campaignRoot.add(ground);
+  campaignRoot.userData.ground = ground;
+  const grid = new THREE.GridHelper(terrainSize, 60, "#6da252", "#70ab57");
   grid.position.y = 0.01;
-  scene.add(grid);
-
-  for (let i = 0; i < 80; i += 1) {
-    const size = 0.18 + Math.random() * 0.22;
-    const grass = new THREE.Mesh(
-      new THREE.BoxGeometry(size, 0.16 + Math.random() * 0.2, size),
-      new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? "#70b84d" : "#66a948" })
-    );
-    grass.position.set((Math.random() - 0.5) * 45, grass.geometry.parameters.height * 0.5, (Math.random() - 0.5) * 45);
-    grass.receiveShadow = true;
-    scene.add(grass);
+  campaignRoot.add(grid);
+  // Decorative grass stays at a fixed draw-call cost as the map expands.
+  const grass = new THREE.InstancedMesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), new THREE.MeshStandardMaterial({color:"#66a948"}), 80);
+  for (let i=0;i<80;i++) {
+    instanceTransform.position.set((Math.random()-0.5)*game.side,0.125,(Math.random()-0.5)*game.side);
+    instanceTransform.rotation.set(0,0,0);
+    instanceTransform.scale.setScalar(1);
+    instanceTransform.updateMatrix();
+    grass.setMatrixAt(i,instanceTransform.matrix);
   }
+  grass.receiveShadow = true;
+  campaignRoot.add(grass);
 }
 
 function setupWorldObjects() {
@@ -260,6 +303,7 @@ function rebuildPlayerModel(character) {
 }
 
 function addTree(label, x, z) {
+  x *= game.side / 40; z *= game.side / 40;
   const root = new THREE.Group();
   root.position.set(x, 0, z);
 
@@ -288,7 +332,7 @@ function addTree(label, x, z) {
     root.add(leaf);
   });
 
-  scene.add(root);
+  campaignRoot.add(root);
   registerEntity(label, "tree", root, 90);
 }
 
@@ -329,11 +373,12 @@ function addHouse(label, x, z) {
   windowRight.position.set(1.6, 1.8, 2.65);
   root.add(windowLeft, windowRight);
 
-  scene.add(root);
+  campaignRoot.add(root);
   registerEntity(label, "house", root, 220);
 }
 
 function addAnimal(label, type, x, z, bodyColor, patchColor, scale) {
+  x *= game.side / 40; z *= game.side / 40;
   const root = new THREE.Group();
   root.position.set(x, 0, z);
   root.scale.setScalar(scale);
@@ -403,7 +448,7 @@ function addAnimal(label, type, x, z, bodyColor, patchColor, scale) {
     root.add(leg);
   }
 
-  scene.add(root);
+  campaignRoot.add(root);
   registerEntity(label, type, root, 110);
 }
 
@@ -442,6 +487,7 @@ function registerEntity(label, type, mesh, maxHealth) {
     aggroRange: 10,
     leashRange: 18
   });
+  if (type === "tree") treeObstacles.push(entities[entities.length-1]);
 }
 
 function bindEvents() {
@@ -463,7 +509,12 @@ function bindEvents() {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && game.phase === "playing") togglePause();
   });
-  dom.start.addEventListener("click", () => game.phase === "error" ? window.location.reload() : game.phase === "paused" ? resumeGame() : startGame());
+  dom.start.addEventListener("click", () => {
+    if (game.phase === "error") window.location.reload();
+    else if (game.phase === "paused") resumeGame();
+    else if (game.phase === "won") advanceMission();
+    else startGame();
+  });
   dom.restart.addEventListener("click", startGame);
   dom.pause.addEventListener("click", togglePause);
   document.querySelectorAll("[data-key]").forEach((button) => {
@@ -516,7 +567,7 @@ function showOverlay(label, title, description, action) {
 function startGame() {
   if (game.phase === "error") return;
   clearInput();
-  Object.assign(game, { phase: "playing", remaining: 120, collected: 0, elapsed: 0 });
+  Object.assign(game, { phase: "playing", remaining: game.duration, collected: 0, elapsed: 0 });
   player.health = player.maxHealth;
   player.hurtCooldown = 0;
   player.isMoving = false;
@@ -534,6 +585,8 @@ function startGame() {
     entity.roamTarget.copy(entity.roamCenter);
     entity.velocity.set(0, 0, 0);
     entity.attackCooldown = 0;
+    entity.roamWait = 0;
+    entity.mesh.userData.flashUntil = 0;
     entity.aggressive = entity.type === "sentinel";
   });
   crystals.forEach((crystal) => { crystal.collected = false; crystal.mesh.visible = true; });
@@ -541,7 +594,8 @@ function startGame() {
   dom.pause.disabled = false;
   dom.pause.textContent = "일시정지";
   setCharacterDisabled(true);
-  dom.message.textContent = "모험 시작! 황금 조각을 향해 이동하세요. 스페이스로 그림자를 밀어내세요.";
+  dom.message.textContent = `미션 ${game.stage} 시작! 조각 ${game.crystalTarget}개를 모으고 포털로 귀환하세요. 수호자 ${game.sentinelTarget}마리를 조심하세요.`;
+  syncMissionInstances();
   camera.position.copy(player.group.position).add(cameraOffset);
   cameraFocus.copy(player.group.position).add(new THREE.Vector3(0, 1.7, 0));
   clock.getDelta();
@@ -571,14 +625,37 @@ function resumeGame() {
   dom.viewport.focus({ preventScroll: true });
 }
 
+function advanceMission() {
+  if (game.phase !== "won") return;
+  game.stage += 1;
+  game.side *= 1.5;
+  game.crystalTarget = Math.ceil(game.crystalTarget * 1.5);
+  game.sentinelTarget = Math.ceil(game.sentinelTarget * 1.5);
+  // Time grows only 25% while map sides and goals grow 50%, raising the challenge.
+  game.duration = Math.ceil(game.duration * 1.25);
+  rebuildCampaignMap();
+  startGame();
+}
+
+function updateMissionCopy() {
+  dom.stage.textContent = String(game.stage).padStart(2,"0");
+  dom.stageTitle.textContent = `미션 ${game.stage} · 마을 복구 작전`;
+  dom.missionGoal.textContent = `빛나는 조각 ${game.crystalTarget}개를 수집`;
+  dom.missionSummary.textContent = `${formatSize(game.side)} × ${formatSize(game.side)} MAP · 조각 ${game.crystalTarget}개 · 수호자 ${game.sentinelTarget}마리 · 제한 ${game.duration}초`;
+}
+
+function formatSize(side) {
+  return Number(side.toFixed(2)).toLocaleString("ko-KR");
+}
+
 function finishGame(won) {
   game.phase = won ? "won" : "lost";
   clearInput();
   dom.pause.disabled = true;
   setCharacterDisabled(false);
-  const description = won ? `에너지 조각 8개를 되찾았습니다. ${Math.ceil(game.remaining)}초를 남기고 마을 복구 성공!` : player.health <= 0 ? "체력이 모두 소진되었습니다. 파동을 사용하거나 빠르게 이동해 그림자를 따돌려 보세요." : `시간이 끝났습니다. 조각 ${game.collected}개를 모았습니다. 가까운 조각부터 수집하고 포털로 돌아오세요.`;
-  showOverlay(won ? "MISSION COMPLETE" : "TRY AGAIN", won ? "마을이 다시 빛납니다!" : "다음 모험을 준비하세요", description, "새 모험 시작 →");
-  dom.message.textContent = won ? "미션 성공! 캐릭터를 바꿔 다시 도전할 수 있습니다." : "도전 종료. 캐릭터를 선택하고 다시 시작하세요.";
+  const description = won ? `조각 ${game.crystalTarget}개를 되찾아 미션 ${game.stage} 완료! 다음 미션은 MAP 한 변 ${formatSize(game.side*1.5)}, 조각 ${Math.ceil(game.crystalTarget*1.5)}개, 수호자 ${Math.ceil(game.sentinelTarget*1.5)}마리로 확장됩니다. 제한시간은 ${Math.ceil(game.duration*1.25)}초이며 수호자도 더 강해집니다.` : player.health <= 0 ? "체력이 모두 소진되었습니다. 같은 미션에서 파동을 사용하거나 빠르게 이동해 그림자를 따돌려 보세요." : `시간이 끝났습니다. 조각 ${game.collected}/${game.crystalTarget}개를 모았습니다. 같은 미션에 다시 도전하세요.`;
+  showOverlay(won ? `MISSION ${game.stage} COMPLETE` : "TRY AGAIN", won ? "더 넓은 세계로 떠나세요!" : "다음 도전을 준비하세요", description, won ? `미션 ${game.stage+1} 시작 →` : `미션 ${game.stage} 다시 도전 →`);
+  dom.message.textContent = won ? "미션 성공! 다음 미션은 MAP·조각·수호자가 각각 50% 증가합니다. 다시 시작 버튼은 현재 미션을 재도전합니다." : `미션 ${game.stage} 종료. 같은 MAP에서 다시 도전할 수 있습니다.`;
 }
 
 function animate() {
@@ -592,6 +669,7 @@ function animate() {
     updateAttack(dt);
     if (game.phase === "playing") updateMission(dt);
   }
+  syncMissionInstances();
   updateCamera(dt);
   updateHud();
   resizeRenderer();
@@ -765,12 +843,18 @@ function updatePlayerAnimation(dt) {
 
 function updateHud() {
   dom.playerPos.textContent = `위치: (${player.group.position.x.toFixed(1)}, ${player.group.position.z.toFixed(1)})`;
-  dom.crystals.textContent = `${game.collected} / 8`;
+  dom.crystals.textContent = `${game.collected} / ${game.crystalTarget}`;
   const remaining = Math.ceil(game.remaining);
   dom.time.textContent = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
   dom.health.textContent = String(Math.ceil(player.health));
   dom.healthBar.value = player.health;
-  const nearest = crystals.filter((crystal) => !crystal.collected).sort((a, b) => a.mesh.position.distanceTo(player.group.position) - b.mesh.position.distanceTo(player.group.position))[0];
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const crystal of crystals) {
+    if (crystal.collected) continue;
+    const distance = crystal.mesh.position.distanceToSquared(player.group.position);
+    if (distance < nearestDistance) { nearest = crystal; nearestDistance = distance; }
+  }
   const destination = nearest ? nearest.mesh.position : portalPosition;
   const delta = destination.clone().sub(player.group.position).setY(0);
   const angle = Math.atan2(delta.dot(cameraRight), delta.dot(cameraForward));
@@ -828,6 +912,7 @@ function performAttack() {
 }
 
 function flashEntity(root) {
+  root.userData.flashUntil = game.elapsed + 0.1;
   root.traverse((node) => {
     if (!node.isMesh || !node.material || !node.material.color) {
       return;
@@ -931,55 +1016,115 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function makeBatch(name, geometry, material, count) {
+  const batch = new THREE.InstancedMesh(geometry, material, count);
+  // Logical positions are updated every frame, including visibility after hits.
+  batch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  batch.frustumCulled = false;
+  batch.castShadow = ["gems", "bodies", "heads"].includes(name);
+  batch.receiveShadow = true;
+  campaignRoot.add(batch);
+  batches[name] = batch;
+  return batch;
+}
+
+function isAccessiblePosition(x,z,clearance=1.8) {
+  if (Math.abs(x)<4.3 && Math.abs(z)<4) return false;
+  if (Math.hypot(x-safeSpawn.x,z-safeSpawn.z)<3.5) return false;
+  return !treeObstacles.some(entity => Math.hypot(x-entity.mesh.position.x,z-entity.mesh.position.z)<clearance);
+}
+
+function stagePosition(index,count,offset=0) {
+  const half = game.side/2-2.5;
+  // Low-discrepancy sampling spreads objects across the whole expanding map.
+  // Reject solid obstacles and the safe starting portal instead of hiding goals.
+  let attempt=0;
+  while (true) {
+    const sample=index+offset+attempt*count;
+    const x=(((sample*0.61803398875+0.13)%1)*2-1)*half;
+    const z=(((sample*0.41421356237+0.71)%1)*2-1)*half;
+    if (isAccessiblePosition(x,z)) return [x,z];
+    attempt++;
+  }
+}
+
 function setupMission() {
-  const gemPositions = [[-15,-13],[-13,9],[-5,15],[8,13],[15,7],[15,-12],[3,-13],[-5,-7]];
-  gemPositions.forEach(([x,z], index) => {
-    const group = new THREE.Group();
-    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.55), new THREE.MeshStandardMaterial({ color: "#ffe279", emissive: "#ffb22b", emissiveIntensity: 0.8, roughness: 0.22, metalness: 0.35 }));
-    gem.castShadow = true;
-    group.add(gem);
-    const marker = new THREE.Mesh(new THREE.CylinderGeometry(0.72,0.72,0.08,20), new THREE.MeshStandardMaterial({color: "#fde8a4", emissive: "#9f701b", emissiveIntensity: 0.3}));
-    marker.position.y = -0.9;
-    group.add(marker);
-    group.position.set(x,1.2,z);
-    scene.add(group);
-    crystals.push({ mesh: group, collected: false, phase: index });
-  });
-  portal = new THREE.Mesh(new THREE.TorusGeometry(1.5,0.16,12,40), new THREE.MeshStandardMaterial({ color: "#55e5cd", emissive: "#2eecd3", emissiveIntensity: 0.6 }));
-  portal.rotation.x = -Math.PI / 2;
+  const firstPositions = [[-15,-13],[-13,9],[-5,15],[8,13],[15,7],[15,-12],[3,-13],[-5,-7]];
+  for (let index=0;index<game.crystalTarget;index++) {
+    const [x,z]=game.stage===1 ? firstPositions[index] : stagePosition(index,game.crystalTarget);
+    const transform=new THREE.Object3D();
+    transform.position.set(x,1.2,z);
+    crystals.push({mesh:transform,collected:false,phase:index});
+  }
+  makeBatch("gems",new THREE.OctahedronGeometry(0.55),new THREE.MeshStandardMaterial({color:"#ffe279",emissive:"#ffb22b",emissiveIntensity:0.8,roughness:0.22,metalness:0.35}),game.crystalTarget);
+  makeBatch("markers",new THREE.CylinderGeometry(0.72,0.72,0.08,20),new THREE.MeshStandardMaterial({color:"#fde8a4",emissive:"#9f701b",emissiveIntensity:0.3}),game.crystalTarget);
+  portal=new THREE.Mesh(new THREE.TorusGeometry(1.5,0.16,12,40),new THREE.MeshStandardMaterial({color:"#55e5cd",emissive:"#2eecd3",emissiveIntensity:0.6}));
+  portal.rotation.x=-Math.PI/2;
   portal.position.copy(portalPosition).setY(0.17);
-  scene.add(portal);
-  [[-14,-2],[12,-4],[4,15]].forEach(([x,z],i) => {
-    const root = new THREE.Group();
-    root.position.set(x,0,z);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.1,1.25,0.85), new THREE.MeshStandardMaterial({color: "#554484", emissive: "#261041", emissiveIntensity: 0.35}));
-    body.position.y = 0.9;
-    body.castShadow = true;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.85,0.6,0.8), new THREE.MeshStandardMaterial({color: "#393050"}));
-    head.position.y = 1.8;
-    root.add(body,head);
-    [-0.2,0.2].forEach(x => {
-      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.17,0.16,0.07), new THREE.MeshBasicMaterial({color: "#ff6eab"}));
-      eye.position.set(x,1.8,0.42);
-      root.add(eye);
-    });
-    scene.add(root);
-    registerEntity("그림자 수호자", "sentinel", root, 100);
-    const enemy = entities[entities.length-1];
-    enemy.aggressive = true;
-    enemy.speed = 2.8 + i*0.2;
-    enemy.attackDamage = 24;
-    enemy.attackRange = 1.6;
-  });
-  // Boundary fences make the playable area visible without hiding the landscape.
-  const fenceGeometry = new THREE.BoxGeometry(0.3, 0.8, 0.3);
-  const fenceMaterial = new THREE.MeshStandardMaterial({color: "#977350"});
-  for (let n = -20; n <= 20; n += 2) {
-    [[n,-20],[n,20],[-20,n],[20,n]].forEach(([x,z]) => {
-      const post = new THREE.Mesh(fenceGeometry,fenceMaterial);
-      post.position.set(x,0.4,z); scene.add(post);
+  campaignRoot.add(portal);
+  const firstEnemies=[[-14,-2],[12,-4],[4,15]];
+  for (let index=0;index<game.sentinelTarget;index++) {
+    const [x,z]=game.stage===1 ? firstEnemies[index] : stagePosition(index,game.sentinelTarget,game.crystalTarget+7);
+    const transform=new THREE.Object3D();
+    transform.position.set(x,0,z);
+    registerEntity("그림자 수호자","sentinel",transform,100+(game.stage-1)*8);
+    const enemy=entities[entities.length-1];
+    enemy.aggressive=true;
+    enemy.speed=(2.8+(index%3)*0.2)*(1+(game.stage-1)*0.08);
+    enemy.attackDamage=24+(game.stage-1)*2;
+    enemy.attackRange=1.6;
+    enemy.instanceIndex=index;
+  }
+  makeBatch("bodies",new THREE.BoxGeometry(1.1,1.25,0.85),new THREE.MeshStandardMaterial({color:"#554484",emissive:"#261041",emissiveIntensity:0.35}),game.sentinelTarget);
+  makeBatch("heads",new THREE.BoxGeometry(0.85,0.6,0.8),new THREE.MeshStandardMaterial({color:"#393050"}),game.sentinelTarget);
+  makeBatch("eyes",new THREE.BoxGeometry(0.17,0.16,0.07),new THREE.MeshBasicMaterial({color:"#ff6eab"}),game.sentinelTarget*2);
+  // Fence posts also use a single shared geometry and draw call.
+  const half=game.side/2;
+  const intervals=Math.ceil(game.side/2);
+  const fence=makeBatch("fence",new THREE.BoxGeometry(0.3,0.8,0.3),new THREE.MeshStandardMaterial({color:"#977350"}),intervals*4);
+  let index=0;
+  for (let i=0;i<intervals;i++) {
+    const n=-half+i*game.side/intervals;
+    [[n,-half],[half,n],[-n,half],[-half,-n]].forEach(([x,z]) => {
+      instanceTransform.position.set(x,0.4,z);
+      instanceTransform.rotation.set(0,0,0);
+      instanceTransform.scale.setScalar(1);
+      instanceTransform.updateMatrix();
+      fence.setMatrixAt(index++,instanceTransform.matrix);
     });
   }
+}
+
+function setInstance(batch,index,root,x,y,z) {
+  instanceTransform.position.copy(root.position);
+  instanceTransform.rotation.copy(root.rotation);
+  instanceOffset.set(x,y,z).applyQuaternion(root.quaternion);
+  instanceTransform.position.add(instanceOffset);
+  instanceTransform.scale.setScalar(root.visible ? 1 : 0);
+  instanceTransform.updateMatrix();
+  batch.setMatrixAt(index,instanceTransform.matrix);
+}
+
+function syncMissionInstances() {
+  if (!batches.gems) return;
+  crystals.forEach((crystal,index) => {
+    setInstance(batches.gems,index,crystal.mesh,0,0,0);
+    setInstance(batches.markers,index,crystal.mesh,0,-0.9,0);
+  });
+  entities.forEach(entity => {
+    if (entity.type!=="sentinel") return;
+    const index=entity.instanceIndex;
+    setInstance(batches.bodies,index,entity.mesh,0,0.9,0);
+    setInstance(batches.heads,index,entity.mesh,0,1.8,0);
+    setInstance(batches.eyes,index*2,entity.mesh,-0.2,1.8,0.42);
+    setInstance(batches.eyes,index*2+1,entity.mesh,0.2,1.8,0.42);
+    instanceColor.set(entity.mesh.userData.flashUntil>game.elapsed ? "#ff7777" : "#ffffff");
+    batches.bodies.setColorAt(index,instanceColor);
+    batches.heads.setColorAt(index,instanceColor);
+  });
+  ["gems","markers","bodies","heads","eyes"].forEach(name => {batches[name].instanceMatrix.needsUpdate=true;});
+  batches.bodies.instanceColor.needsUpdate=true;
+  batches.heads.instanceColor.needsUpdate=true;
 }
 
 function updateMission() {
@@ -992,14 +1137,14 @@ function updateMission() {
       crystal.collected = true;
       crystal.mesh.visible = false;
       game.collected += 1;
-      dom.message.textContent = game.collected === 8 ? "모든 조각을 찾았습니다! 집 앞 청록색 포털로 돌아오세요." : `에너지 조각 ${game.collected}/8 수집! 체력이 12 회복되었습니다.`;
+      dom.message.textContent = game.collected === game.crystalTarget ? "모든 조각을 찾았습니다! 집 앞 청록색 포털로 돌아오세요." : `에너지 조각 ${game.collected}/${game.crystalTarget} 수집! 체력이 12 회복되었습니다.`;
       player.health = Math.min(player.maxHealth,player.health+12);
     }
   });
-  portal.material.emissiveIntensity = game.collected === 8 ? 1.5 : 0.4;
+  portal.material.emissiveIntensity = game.collected === game.crystalTarget ? 1.5 : 0.4;
   const portalDistance = new THREE.Vector2(player.group.position.x,player.group.position.z-5).length();
   if (player.health <= 0) return finishGame(false);
-  if (game.collected === 8 && portalDistance < 1.8) return finishGame(true);
+  if (game.collected === game.crystalTarget && portalDistance < 1.8) return finishGame(true);
   if (game.remaining <= 0) finishGame(false);
 }
 
@@ -1009,7 +1154,7 @@ function resolveObstacles(position, previous) {
     if (Math.abs(previous.x) >= 3.55) position.x = Math.sign(previous.x)*3.55;
     else position.z = (Math.sign(previous.z) || 1)*3.3;
   }
-  entities.filter(entity => entity.type === "tree").forEach(entity => {
+  treeObstacles.forEach(entity => {
     const dx = position.x-entity.mesh.position.x;
     const dz = position.z-entity.mesh.position.z;
     const distance = Math.hypot(dx,dz);

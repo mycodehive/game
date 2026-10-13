@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#080e1c" />
   <title>Blue Marble 3D — PLAYROOM</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="../assets/fullscreen.css" />
 </head>
 <body>
   <main class="page">
@@ -19,17 +20,58 @@
       <section class="board-section">
         <div class="board-toolbar">
           <div><span class="live-dot"></span><strong>도시의 주인이 될 시간</strong></div>
-          <div class="view-switch" role="group" aria-label="보드 보기"><button id="view-3d" type="button" aria-pressed="false" disabled>3D 보드</button><button id="view-2d" type="button" aria-pressed="true">2D 지도</button></div>
+          <div class="view-switch" role="group" aria-label="보드 보기"><button id="view-3d" type="button" aria-pressed="false" disabled>3D 보드</button><button id="view-2d" type="button" aria-pressed="true">2D 지도</button><button id="board-fullscreen-btn" type="button" aria-pressed="false">⛶ 전체화면 보기</button></div>
         </div>
+        <div id="board-play-surface" class="board-play-surface" tabindex="-1">
+          <div id="board-fullscreen-actions" class="board-fullscreen-actions" aria-label="전체화면 게임 조작" hidden>
+            <div id="fullscreen-turn-info" class="fullscreen-turn-info" role="status" aria-live="polite"></div>
+            <div class="fullscreen-button-row">
+              <button id="fullscreen-start-btn" type="button">게임 시작</button>
+              <button id="fullscreen-roll-btn" type="button" class="fullscreen-primary">주사위 굴리기</button>
+              <button id="fullscreen-buy-btn" type="button">구매</button>
+              <button id="fullscreen-pass-btn" type="button">패스</button>
+              <button id="fullscreen-exit-btn" type="button" aria-label="전체화면 닫기">⛶ 닫기</button>
+            </div>
+          </div>
         <div id="scene-wrap" class="scene-wrap" hidden>
           <div id="scene-3d" class="scene-3d" aria-label="3D 블루마블 보드. 드래그로 회전, 휠로 확대. 도시는 클릭해서 확인하세요."></div>
           <div class="scene-caption"><span>드래그 회전 · 휠 확대 · 도시 클릭</span><span id="scene-status">3D 준비 중</span></div>
           <div class="camera-controls" role="group" aria-label="카메라 조절"><button id="camera-left" type="button" aria-label="왼쪽 회전">↶</button><button id="camera-right" type="button" aria-label="오른쪽 회전">↷</button><button id="camera-in" type="button" aria-label="확대">＋</button><button id="camera-out" type="button" aria-label="축소">−</button><button id="camera-home" type="button">기본 시점</button><button id="camera-top" type="button">위에서</button></div>
         </div>
         <div id="board" class="board" aria-label="게임 보드"></div>
-        <div class="board-footer"><span id="view-status" role="status">2D 지도 · 3D 보드를 준비하고 있습니다.</span><span>Space 주사위 · Enter 턴 종료</span></div>
+  <div id="owned-cities-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="owned-cities-title">
+      <div class="modal-head">
+        <h3 id="owned-cities-title">보유 도시</h3>
+        <button id="owned-cities-close" class="modal-close" type="button" aria-label="닫기">닫기</button>
+      </div>
+      <div id="owned-cities-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="city-arrival-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="city-arrival-title">
+      <div class="modal-head">
+        <h3 id="city-arrival-title">도시 정보</h3>
+        <button id="city-arrival-close" class="modal-close" type="button" aria-label="닫기">닫기</button>
+      </div>
+      <div id="city-arrival-body" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="city-buy-btn" type="button">구매</button>
+        <button id="city-pass-btn" type="button">패스</button>
+        <button id="city-build-house-btn" type="button">집 건설</button>
+        <button id="city-build-building-btn" type="button">빌딩 건설</button>
+        <button id="city-build-hotel-btn" type="button">호텔 건설</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+        </div>
+        <div class="board-footer"><span id="view-status" role="status">2D 지도 · 3D 보드를 준비하고 있습니다.</span><span>Space 주사위 · 선택 후 자동으로 다음 차례</span></div>
         <section class="panel tile-inspector" aria-live="polite"><div><p class="eyebrow">TILE INSPECTOR</p><h2 id="tile-inspector-title">도시를 선택하세요</h2><p id="tile-inspector-info">3D 보드 또는 2D 지도에서 도시를 클릭하면 정보를 확인할 수 있어요.</p></div><button id="inspect-action" type="button" hidden>현재 도시 액션</button></section>
-        <details class="panel rules-panel"><summary>처음 플레이하시나요? 게임 방법</summary><p>2~4명이 한 기기에서 번갈아 플레이합니다. 이름을 정한 뒤 게임을 시작하고 주사위를 굴리세요. 빈 도시에 도착하면 구매하거나 패스할 수 있습니다. 본인 도시에 집·빌딩·호텔을 지어 임대료를 올리고, 상대 도시에 도착하면 임대료를 냅니다.</p><p>출발점을 지나면 200을 받고, 세금은 100, 무인도는 다음 턴 한 번 쉬기입니다. 이벤트는 이동·은행 납부·도시 강탈을 일으킵니다. 마지막까지 파산하지 않은 플레이어가 승리합니다.</p></details>
+        <details class="panel rules-panel"><summary>처음 플레이하시나요? 게임 방법</summary><p>2~4명이 한 기기에서 번갈아 플레이합니다. 이름을 정한 뒤 게임을 시작하고 주사위를 굴리세요. 빈 도시에 도착하면 구매하거나 패스할 수 있습니다. 본인 도시에 도착하면 집·빌딩·호텔을 지어 임대료를 올리고, 상대 도시에 도착하면 임대료를 냅니다. 구매·패스·일반 도착은 자동으로 다음 차례로 넘어갑니다. 본인 도시의 건설 선택은 창을 닫으면 완료됩니다.</p><p>출발점을 지나면 200을 받고, 세금은 100, 무인도는 다음 턴 한 번 쉬기입니다. 이벤트는 이동·은행 납부·도시 강탈을 일으킵니다. 마지막까지 파산하지 않은 플레이어가 승리합니다.</p></details>
       </section>
 
       <aside class="side-panel">
@@ -57,7 +99,6 @@
             <button id="roll-btn">주사위 굴리기</button>
             <button id="buy-btn">구매</button>
             <button id="pass-btn">패스</button>
-            <button id="end-turn-btn">턴 종료</button>
           </div>
         </section>
 
@@ -75,37 +116,9 @@
     </section>
   </main>
 
-  <div id="owned-cities-modal" class="modal-overlay" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="owned-cities-title">
-      <div class="modal-head">
-        <h3 id="owned-cities-title">보유 도시</h3>
-        <button id="owned-cities-close" class="modal-close" type="button" aria-label="닫기">닫기</button>
-      </div>
-      <div id="owned-cities-body" class="modal-body"></div>
-    </div>
-  </div>
-
-  <div id="city-arrival-modal" class="modal-overlay" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="city-arrival-title">
-      <div class="modal-head">
-        <h3 id="city-arrival-title">도시 정보</h3>
-        <button id="city-arrival-close" class="modal-close" type="button" aria-label="닫기">닫기</button>
-      </div>
-      <div id="city-arrival-body" class="modal-body"></div>
-      <div class="modal-actions">
-        <button id="city-buy-btn" type="button">구매</button>
-        <button id="city-pass-btn" type="button">패스</button>
-        <button id="city-end-btn" type="button">턴 종료</button>
-        <button id="city-build-house-btn" type="button">집 건설</button>
-        <button id="city-build-building-btn" type="button">빌딩 건설</button>
-        <button id="city-build-hotel-btn" type="button">호텔 건설</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <script src="app.js" defer></script>
   <script type="module" src="scene.js"></script>
+  <script type="module" src="fullscreen.js"></script>
 </body>
 </html>

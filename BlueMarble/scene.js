@@ -33,7 +33,8 @@ try {
   const lookAt = new THREE.Vector3(0, 0.3, 0);
   let azimuth = -Math.PI / 4, elevation = 0.86, distance = 24;
   function cameraUpdate() {
-    camera.position.set(Math.sin(azimuth) * Math.cos(elevation) * distance, Math.sin(elevation) * distance, Math.cos(azimuth) * Math.cos(elevation) * distance);
+    const fittedDistance = distance * Math.max(1, 1 / camera.aspect);
+    camera.position.set(Math.sin(azimuth) * Math.cos(elevation) * fittedDistance, Math.sin(elevation) * fittedDistance, Math.cos(azimuth) * Math.cos(elevation) * fittedDistance);
     camera.lookAt(lookAt);
   }
   scene.add(new THREE.HemisphereLight(0xc9eaff, 0x293144, 2));

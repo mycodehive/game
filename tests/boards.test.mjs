@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const raw = await readFile(new URL('../minecraft/libs/three.module.js', import.meta.url), 'utf8');
 const three = await import(`data:text/javascript;base64,${Buffer.from(raw).toString('base64')}`);
 function environment() {
-  const elements = new Map(), listeners = new Map(), frames = [], renders = [];
+  const elements = new Map(), listeners = new Map(), frames = [], renders = [], observers = [];
   class Element {
     constructor() { this.children = []; this.listeners = new Map(); this.hidden = false; this.style = {}; this.clientWidth = 900; this.clientHeight = 650; }
     appendChild(child) { this.children.push(child); }
@@ -25,8 +25,8 @@ function environment() {
     render(scene,camera) { scene.updateMatrixWorld(); camera.updateMatrixWorld(); renders.push({scene,camera}); }
   }
   const window = { devicePixelRatio:1, matchMedia:() => ({ matches:false }), addEventListener(type,callback) { listeners.set(type,callback); }, dispatchEvent(event) { listeners.get(event.type)?.(event); } };
-  const context = vm.createContext({ THREE:{...three,WebGLRenderer:Renderer}, document,window,console,performance,Event:class {constructor(type){this.type=type;}}, ResizeObserver:class {constructor(callback){this.callback=callback;} observe(){this.callback();}}, requestAnimationFrame:callback=>frames.push(callback) });
-  return { context,window,document,elements,listeners,frames,renders,frame() { const callback = frames.shift(); assert.ok(callback); callback(performance.now()); } };
+  const context = vm.createContext({ THREE:{...three,WebGLRenderer:Renderer}, document,window,console,performance,Event:class {constructor(type){this.type=type;}}, ResizeObserver:class {constructor(callback){this.callback=callback;observers.push(callback);} observe(){this.callback();}}, requestAnimationFrame:callback=>frames.push(callback) });
+  return { context,window,document,elements,listeners,frames,renders,observers,frame() { const callback = frames.shift(); assert.ok(callback); callback(performance.now()); } };
 }
 const ladder = environment();
 ladder.window.getLadderSnapshot = () => ({positions:[1,1],jumps:{8:26,98:78},currentPlayer:0,ended:false});
@@ -36,6 +36,10 @@ ladder.frame();
 assert.equal(ladder.renders.length,1);
 assert.equal(ladder.elements.get('stage3d').hidden,false);
 assert.equal(ladder.elements.get('boardWrapper').hidden,true);
+const initialLadderDistance=ladder.renders[0].camera.position.length();
+ladder.elements.get('stage3d').clientWidth=360;ladder.elements.get('stage3d').clientHeight=780;
+ladder.observers.forEach(resize=>resize());ladder.frame();
+assert.ok(ladder.renders.at(-1).camera.position.length()>initialLadderDistance,'portrait fullscreen fits the whole ladder');
 const pawns = ladder.renders[0].scene.children.filter(object=>object.isGroup);
 assert.equal(pawns.length,2);
 const previous = pawns[0].position.clone();
@@ -52,6 +56,10 @@ await vm.runInContext(`(async()=>{${marbleCode.replace("const THREE = await impo
 marble.frame();
 assert.equal(marble.renders.length,1);
 assert.equal(marble.elements.get('scene-wrap').hidden,false);
+const initialMarbleDistance=marble.renders[0].camera.position.length();
+marble.elements.get('scene-3d').clientWidth=360;marble.elements.get('scene-3d').clientHeight=780;
+marble.window.dispatchEvent({type:'resize'});marble.frame();
+assert.ok(marble.renders.at(-1).camera.position.length()>initialMarbleDistance,'portrait fullscreen fits the whole marble board');
 const scene = marble.renders[0].scene;
 const tiles = scene.children.filter(object=>object.userData.developments);
 assert.equal(tiles.length,32);
