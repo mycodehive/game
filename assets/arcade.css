@@ -521,3 +521,12 @@ footer>span {
     transition:none!important
   }
 }
+
+.breaker-cover { background:radial-gradient(ellipse at 80% 80%,#743887 0,transparent 45%),linear-gradient(135deg,#22264b,#102438); }
+.breaker-art b { text-shadow:0 0 25px #ff72c74d; }
+.mini-bricks { position:absolute;display:grid;grid-template-columns:repeat(3,22px);gap:4px;right:15px;top:55px;transform:rotate(-15deg); }
+.mini-bricks i { width:22px;height:13px;border-radius:2px;background:#bf83ed;box-shadow:0 0 11px #bd8aff55;border:1px solid #e1b1ff; }
+.mini-bricks i:nth-child(3n) { background:#f987a8;border-color:#ffd8e4; }
+.mini-bricks i:nth-child(n+7) { background:#72e1cd;border-color:#b8ffee; }
+.mini-ball { position:absolute;right:62px;bottom:49px;width:9px;height:9px;border-radius:50%;background:#e6ffff;box-shadow:0 0 14px #77ffff,10px -20px 0 -2px #66ffff66,15px -38px 0 -3px #66ffff33; }
+.mini-paddle { position:absolute;right:42px;bottom:35px;width:55px;height:8px;border-radius:6px;background:#81efda;box-shadow:0 0 18px #66f1c255; }
