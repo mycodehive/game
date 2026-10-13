@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#08131e">
+  <meta name="description" content="캐릭터를 고르고30초 동안 무기를 수집하세요. 다가오는 적을 처치하고 새로운 무장으로 다음 스테이지에 도전하는3D GunArcade.">
+  <title>GunArcade — PLAYROOM</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="page">
+  <header class="game-header">
+    <a class="back-link" href="../">← PLAYROOM</a>
+    <div class="title-copy"><p class="eyebrow">ARM UP. HOLD YOUR GROUND.</p><h1>Gun<span>Arcade</span></h1></div>
+    <span class="header-badge">3D ARENA SURVIVAL</span>
+  </header>
+  <div class="game-layout">
+    <section id="arena-wrap" class="arena-wrap" aria-label="GunArcade 3D 플레이 화면">
+      <div id="canvas-host" class="canvas-host" tabindex="0" aria-label="WASD 또는 방향키로 이동. 1~3 무기 선택, Space 사격, Esc 일시정지."></div>
+      <div class="stage-hud">
+        <div class="hud-stat"><span>STAGE</span><strong id="stage-value">01</strong></div>
+        <div class="phase-clock"><span id="phase-label">SELECT YOUR HERO</span><strong id="phase-value">READY</strong><div class="clock-bar"><i id="phase-bar"></i></div></div>
+        <div class="hud-stat"><span>SCORE</span><strong id="score-value">0</strong></div>
+      </div>
+      <div class="view-controls"><button id="pause-button" type="button" disabled>Ⅱ 정지</button><button id="fullscreen-button" type="button" aria-pressed="false">⛶ 전체화면</button></div>
+      <div class="health-hud"><div><strong id="hero-label">주인공 선택</strong><span id="hp-value">HP —</span></div><div class="health-track"><i id="hp-bar"></i></div></div>
+      <div id="quick-weapons" class="quick-weapons" role="group" aria-label="빠른 무기 선택"><button id="quick-weapon-1" type="button" data-slot="0"><b>1</b><span>—</span></button><button id="quick-weapon-2" type="button" data-slot="1"><b>2</b><span>—</span></button><button id="quick-weapon-3" type="button" data-slot="2"><b>3</b><span>—</span></button></div>
+      <div id="pickup-toast" class="pickup-toast" role="status" aria-live="polite" hidden></div>
+      <div id="aim-reticle" class="aim-reticle" hidden aria-hidden="true"></div>
+      <div class="touch-pad" aria-label="터치 이동 조작"><button class="up" type="button" data-move-x="0" data-move-z="-1" aria-label="앞으로 이동">▲</button><button class="left" type="button" data-move-x="-1" data-move-z="0" aria-label="왼쪽 이동">◀</button><button class="down" type="button" data-move-x="0" data-move-z="1" aria-label="뒤로 이동">▼</button><button class="right" type="button" data-move-x="1" data-move-z="0" aria-label="오른쪽 이동">▶</button></div>
+      <button id="fire-button" class="fire-button" type="button" aria-label="누르고 있으면 무기 사격">FIRE</button>
+      <div class="arena-footer"><span id="arena-hint">주인공을 선택하고 출격하세요.</span><span id="weapon-hud">NO WEAPON</span></div>
+      <div id="game-overlay" class="game-overlay"><div class="overlay-card">
+        <p id="overlay-eyebrow" class="eyebrow">THIRTY SECONDS TO ARM</p><h2 id="overlay-title">30초의 준비.<br><span>당신만의 생존.</span></h2>
+        <p id="overlay-description">주인공의 능력치로 무기가 달라집니다.<br>무기를 수집하고, 다가오는 적을 모두 물리치세요.</p>
+        <div class="stage-flow"><span><b>01</b> 캐릭터</span><span><b>02</b> 30초 무장</span><span><b>03</b> 적 처치</span></div>
+        <button id="play-button" class="primary-button" type="button">선택한 캐릭터로 출격 →</button>
+        <p id="overlay-hint">주변 보급 상자에 접근하여 무기를 최소 1개 습득하세요.</p>
+      </div></div>
+    </section>
+    <aside class="side-panel">
+      <section class="panel roster-panel"><div class="panel-heading"><h2>주인공 선택</h2><span>04 OPERATIVES</span></div><div id="hero-list" class="hero-list"></div><p id="hero-description" class="hero-description"></p><div id="hero-stats" class="hero-stats"></div></section>
+      <section class="panel loadout-panel"><div class="panel-heading"><h2>이번 스테이지 무장</h2><span id="weapon-count">0 / 3 SLOTS</span></div><div id="weapon-list" class="weapon-list"></div><p class="loadout-note">다음 스테이지에는 무기가 모두 초기화됩니다.<br>4번째 종류를 얻으면 선택한 슬롯을 교체합니다.</p></section>
+      <section class="panel mission-panel"><p class="eyebrow">STAGE PROTOCOL</p><h2 id="mission-title">30초 동안 무기를 찾으세요.</h2><p id="mission-description">전투는 준비 시간이 끝난 뒤 시작합니다. 캐릭터 능력치는 습득한 무기의 피해량과 연사 특성에 반영됩니다.</p><div id="nearest-pickup" class="nearest-pickup">보급 위치를 확인하세요.</div></section>
+      <section class="panel control-panel"><h2>조작 설정</h2><label><input id="auto-aim" type="checkbox" checked> 가장 가까운 적 자동 조준</label><label><input id="auto-fire" type="checkbox" checked> 전투 중 자동 사격</label><label><input id="reduce-effects" type="checkbox"> 화면 흔들림·효과 줄이기</label><p><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> 이동<br><kbd>1 2 3</kbd> 무기 변경<br><kbd>Space</kbd> / 마우스 누르기 사격<br><kbd>Esc</kbd> 일시정지 / 계속하기<br>수동 조준은 자동 조준을 끄고 마우스·터치 사용</p><button id="restart-button" class="secondary-button" type="button">↻ 새 게임</button></section>
+    </aside>
+  </div>
+  <p class="page-note">적은 준비 시간이 끝난 시점의 주인공 위치 주변에서 접근합니다. 전투를 클리어하면3초 뒤 무기를 초기화하고 다음 스테이지의30초 준비 단계로 이동합니다.</p>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
