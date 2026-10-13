@@ -165,10 +165,11 @@ function drawTrackThumbnail(track, canvas) {
   ctx.strokeStyle = "rgba(255,255,255,0.85)";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  const first = map(track.spline[0]);
+  const samples = new THREE.CatmullRomCurve3(track.spline.map((p) => new THREE.Vector3(...p)), true, "catmullrom", 0.5).getSpacedPoints(120);
+  const first = map(samples[0].toArray());
   ctx.moveTo(first.x, first.y);
-  for (let i = 1; i < track.spline.length; i++) {
-    const p = map(track.spline[i]);
+  for (let i = 1; i < samples.length; i++) {
+    const p = map(samples[i].toArray());
     ctx.lineTo(p.x, p.y);
   }
   ctx.closePath();
@@ -477,7 +478,7 @@ class Game {
     const container = document.createElement("div");
     container.className = "menu-overlay";
     container.innerHTML = `
-      <nav class="menu-nav"><a href="../index.html">← PLAYROOM</a><span class="status-pill">THREE.JS · 실시간 3D</span></nav>
+      <nav class="menu-nav"><a href="../index.html">← PLAYROOM</a><span class="status-pill">LIVE · 실시간 3D</span></nav>
       <div class="mode-layout">
         <section class="mode-hero"><div class="eyebrow">APEX / RACING CLUB</div><h1 class="menu-title">코너를 넘어,<br><span>한계를 넘어.</span></h1><p class="menu-sub">엔진을 깨우고 나만의 레이싱 라인을 찾으세요.<br>10개의 서킷과 실제 차량 물리가 기다립니다.</p><div class="hero-car" aria-hidden="true"><div class="car-glow"></div><div class="car-body"><div class="car-window"></div><div class="car-stripe"></div></div><div class="car-wheel wheel-left"></div><div class="car-wheel wheel-right"></div><div class="speed-line line-one"></div><div class="speed-line line-two"></div></div><div class="hero-stats"><span><b>10</b>서킷</span><span><b>1–2</b>플레이어</span><span><b>3D</b>물리 주행</span></div></section>
         <section class="mode-panel"><div class="eyebrow">01 / 플레이 모드</div><h2>어떻게 달릴까요?</h2><p>이름을 입력하고 원하는 모드를 선택하세요.</p><label for="name-p1">플레이어 1 이름 <span>선택</span></label><input id="name-p1" class="menu-name-input" maxlength="14" placeholder="드라이버 1" autocomplete="nickname" /><label for="name-p2">플레이어 2 이름 <span>2인 모드 · 선택</span></label><input id="name-p2" class="menu-name-input" maxlength="14" placeholder="드라이버 2" />
@@ -1101,7 +1102,7 @@ class Game {
     const ox = ((span - (b.maxX - b.minX) * s) * 0.5) + pad;
     const oy = ((span - (b.maxZ - b.minZ) * s) * 0.5) + pad;
     this.mmScale = { b, s, ox, oy };
-    this.mmSpline = this.track.spline.map((p) => ({ x: (p[0] - b.minX) * s + ox, y: (p[2] - b.minZ) * s + oy }));
+    this.mmSpline = this.spline.getSpacedPoints(120).map((p) => ({ x: (p.x - b.minX) * s + ox, y: (p.z - b.minZ) * s + oy }));
     this.mmCp = this.checkpoints.map((cp) => ({ x: (cp.position[0] - b.minX) * s + ox, y: (cp.position[2] - b.minZ) * s + oy }));
   }
   initParticles() {
@@ -1319,7 +1320,6 @@ class Game {
     this.started = false;
     this.finished = true;
     const loser = this.players.find((p) => p !== player);
-    if (loser && !loser.finishTime) loser.finishTime = loser.raceTime;
     this.persistRaceRecords([player]);
     this.showMultiResult(player, loser);
   }
@@ -1472,10 +1472,10 @@ class Game {
       <div class="result-panel">
         <div class="result-title">${escapeHtml(winner.name)} 우승!</div>
         <div class="result-total-time">${escapeHtml(winner.name)}: ${formatMs(winner.finishTime * 1000)}</div>
-        <div class="result-best-lap">${escapeHtml(loser.name)}: ${formatMs(loser.finishTime * 1000)}</div>
+        <div class="result-best-lap">${escapeHtml(loser.name)}: ${loser.finished ? formatMs(loser.finishTime * 1000) : `미완주 · ${loser.currentLap}바퀴 주행 중`}</div>
         <ul class="result-lap-list">
           <li><span>${escapeHtml(winner.name)} 베스트 랩</span><span>${formatMs(winner.bestLap * 1000)}</span></li>
-          <li><span>${escapeHtml(loser.name)} 베스트 랩</span><span>${formatMs(loser.bestLap * 1000)}</span></li>
+          <li><span>${escapeHtml(loser.name)} 베스트 랩</span><span>${Number.isFinite(loser.bestLap) ? formatMs(loser.bestLap * 1000) : "—"}</span></li>
         </ul>
         <button class="result-restart-btn" id="retry-btn">다시 달리기</button>
         <button class="result-restart-btn" id="menu-btn" style="margin-left:8px;border-color:#ffffff88;">트랙 선택</button>
