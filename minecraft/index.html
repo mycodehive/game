@@ -3,65 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Minecraft Playground</title>
+  <meta name="theme-color" content="#091222" />
+  <title>Voxel Quest · PLAYROOM by CodeHive</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main class="page">
-    <section class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Voxel Sandbox</p>
-        <h1>마인크래프트풍 동물 마을</h1>
-        <p class="hero-text">
-          캐릭터를 고르고 블록 월드 안을 돌아다니세요. 나무, 고양이, 말, 소, 돼지, 닭, 양,
-          그리고 집이 배치된 작은 마을입니다.
-        </p>
-      </div>
-      <div class="hero-card">
-        <div class="card-title">조작법</div>
-        <p>`WASD` 또는 방향키로 이동</p>
-        <p>`Space` 공격</p>
-        <p>마우스로 캐릭터 선택</p>
-      </div>
-    </section>
-
+    <header class="hero">
+      <div><a class="back-link" href="../index.html">← PLAYROOM</a><p class="eyebrow">3D ADVENTURE / VOXEL QUEST</p><h1>작은 마을, 큰 모험<span>.</span></h1><p class="hero-text">에너지 조각 8개를 모아 마을의 포털을 밝혀 주세요. 그림자 수호자를 피하거나 밀어내며 돌아오세요.</p></div>
+      <div class="hero-badge"><span>THREE DIMENSIONS</span><strong>탐험 · 수집 · 탈출</strong><small>한 판 2분 / 키보드 · 터치</small></div>
+    </header>
     <section class="layout">
       <aside class="panel">
-        <h2>캐릭터 선택</h2>
+        <p class="eyebrow">YOUR CHARACTER</p><h2>모험가 선택</h2>
         <div id="character-list" class="character-list" aria-label="캐릭터 선택"></div>
-
-        <section class="info-box">
-          <h3>현재 캐릭터</h3>
-          <div id="selected-name" class="selected-name">탐험가</div>
-          <p id="selected-description" class="selected-description"></p>
-        </section>
-
-        <section class="info-box">
-          <h3>월드 구성</h3>
-          <ul class="entity-list">
-            <li>나무 5그루</li>
-            <li>고양이 1마리</li>
-            <li>말 1마리</li>
-            <li>소 1마리</li>
-            <li>돼지 1마리</li>
-            <li>닭 1마리</li>
-            <li>양 1마리</li>
-            <li>집 1채</li>
-          </ul>
-        </section>
+        <section class="info-box"><h3 id="selected-name">탐험가</h3><p id="selected-description" class="selected-description"></p></section>
+        <section class="info-box"><h3>이번 미션</h3><ol class="mission-list"><li>빛나는 조각 8개를 수집</li><li>그림자 수호자를 피하기</li><li>집 앞 청록색 포털로 귀환</li></ol><p class="mission-note">동물들은 안전한 마을 친구입니다.<br>파동 공격은 그림자만 밀어냅니다.</p></section>
+        <section class="info-box controls-copy"><h3>플레이 가이드</h3><p><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> 이동</p><p><kbd>Space</kbd> 파동 · <kbd>P</kbd> 일시정지</p><p><kbd>R</kbd> 다시 시작</p></section>
       </aside>
-
-      <section class="stage-panel">
-        <div id="viewport" class="viewport" aria-label="마인크래프트풍 3D 게임 화면"></div>
-        <div class="hud">
-          <span id="player-pos">위치: (0, 0)</span>
-          <span id="focus-name">타겟: 없음</span>
-          <span id="attack-state">공격 준비됨</span>
+      <section class="stage-panel" aria-label="게임 플레이 영역">
+        <div class="stage-toolbar"><span class="live-dot"></span><strong>마을 복구 작전</strong><div class="toolbar-actions"><button id="pause-button" type="button" disabled>일시정지</button><button id="restart-button" type="button">다시 시작</button></div></div>
+        <div class="stage-wrap">
+          <div id="viewport" class="viewport" tabindex="0" aria-label="3D 게임 화면. WASD 또는 방향키 이동, 스페이스 파동 공격, P 일시정지."></div>
+          <div class="game-stats"><div><span>ENERGY</span><strong id="crystal-count">0 / 8</strong></div><div><span>TIME LEFT</span><strong id="time-left">2:00</strong></div><div class="health-stat"><span>HEALTH <b id="health-value">180</b></span><progress id="health-bar" max="180" value="180" aria-label="체력"></progress></div></div>
+          <div id="game-overlay" class="game-overlay"><div class="overlay-card"><p id="overlay-label" class="eyebrow">MISSION BRIEFING</p><h2 id="overlay-title">마을에 빛을 되찾아 주세요</h2><p id="overlay-description">2분 안에 황금 조각 8개를 모으고 집 앞 포털로 돌아오세요. 그림자와 닿으면 체력이 줄어듭니다.</p><button id="start-button" class="primary-button" type="button">모험 시작 →</button><p class="overlay-hint">먼저 왼쪽에서 캐릭터를 선택해 주세요.</p></div></div>
+          <div class="touch-controls" aria-label="터치 조작"><div class="dpad"><button type="button" data-key="arrowup" aria-label="앞으로 이동">↑</button><button type="button" data-key="arrowleft" aria-label="왼쪽 이동">←</button><button type="button" data-key="arrowdown" aria-label="뒤로 이동">↓</button><button type="button" data-key="arrowright" aria-label="오른쪽 이동">→</button></div><button id="touch-attack" class="attack-button" type="button" aria-label="파동 공격">파동<br><small>SPACE</small></button></div>
         </div>
+        <div class="hud"><span id="player-pos">위치: (0, 5)</span><span id="focus-name">가까운 조각을 찾아보세요</span><span id="attack-state">파동 준비됨</span></div>
+        <p id="game-message" class="game-message" role="status" aria-live="polite">캐릭터를 고르고 모험을 시작하세요.</p>
       </section>
     </section>
   </main>
-
   <script type="module" src="app.js"></script>
 </body>
 </html>
