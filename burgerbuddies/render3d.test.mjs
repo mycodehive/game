@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+const THREE=await import(`data:text/javascript;base64,${Buffer.from(await readFile(new URL('../minecraft/libs/three.module.js',import.meta.url),'utf8')).toString('base64')}`);
+const {INGREDIENTS,createGame}=await import(`data:text/javascript;base64,${Buffer.from(await readFile(new URL('./engine.js',import.meta.url),'utf8')).toString('base64')}`);
+class Element{constructor(){this.children=[];this.listeners=new Map();this.events=[];this.bounds={width:600,height:700};} appendChild(c){c.parent=this;this.children.push(c);}setAttribute(){}getBoundingClientRect(){return this.bounds;}addEventListener(t,f){this.listeners.set(t,f);}removeEventListener(t){this.listeners.delete(t);}dispatchEvent(e){this.events.push(e);}remove(){this.parent.children=this.parent.children.filter(c=>c!==this);}}
+const gpus=[];class Renderer{constructor(){this.domElement=new Element();this.count=0;this.disposed=0;gpus.push(this);}setPixelRatio(){}setSize(w,h){this.width=w;this.height=h;}render(s,c){this.scene=s;this.camera=c;this.count++;}dispose(){this.disposed++;}}
+class Event{constructor(type,options){this.type=type;Object.assign(this,options);}}
+const source=(await readFile(new URL('./render3d.js',import.meta.url),'utf8')).replace(/^import .*?;\n/gm,'').replace('export function createRenderer','function createRenderer')+'\nglobalThis.createRenderer=createRenderer;';
+const context=vm.createContext({THREE:{...THREE,WebGLRenderer:Renderer},INGREDIENTS,CustomEvent:Event});vm.runInContext(source,context);
+const container=new Element(),view=context.createRenderer(container),gpu=gpus[0],game=createGame();
+const all=['bottom_bun','patty','cheese','lettuce','tomato','pickle','onion','egg','bacon','patty','cheese','top_bun'];const s=game.state;s.target=all;s.stack=all;s.stage=1;s.phase='build';view.render(s,[],0.05);
+const target=gpu.scene.children.find(n=>n.userData.kind==='target'),stack=gpu.scene.children.find(n=>n.userData.kind==='stack');
+const layers=r=>r.children.filter(n=>n.userData.kind==='ingredient');
+assert.deepEqual(Array.from(layers(target),n=>n.userData.ingredientId),all);assert.deepEqual(Array.from(layers(stack),n=>n.userData.ingredientId),all);
+assert.equal(target.position.x,-2.9);assert.equal(stack.position.x,2.9);
+let y=.19;layers(target).forEach(n=>{assert.equal(n.userData.baseY,y);assert.equal(n.userData.height,INGREDIENTS[n.userData.ingredientId].height);y+=n.userData.height;});
+assert.ok(layers(target).at(-1).children.length>25,'hemisphere bun has sesame seeds and cute eyes');
+assert.equal(layers(target).find(n=>n.userData.ingredientId==='onion').children.filter(n=>n.geometry.type==='TorusGeometry').length,3);
+assert.equal(layers(target).find(n=>n.userData.ingredientId==='lettuce').children.length,9);
+assert.ok(layers(target).find(n=>n.userData.ingredientId==='egg').children.every(n=>n.geometry.type==='SphereGeometry'));
+for(const [w,h] of [[360,700],[1000,500],[320,900]]){container.bounds={width:w,height:h};view.resize();view.render(s,[],0);for(const r of [target,stack])for(const xx of [-2.1,2.1])for(const yy of [0,y]){const p=new THREE.Vector3(r.position.x+xx,yy,0).project(gpu.camera);assert.ok(Math.abs(p.x)<1&&Math.abs(p.y)<1,`burgers fit ${w}x${h} (${p.x},${p.y})`);}}
+const old=layers(stack).at(-1);let disposedGeo=0;old.traverse(n=>n.geometry?.addEventListener('dispose',()=>disposedGeo++));s.stack=all.slice(0,-1);view.render(s,[],0);assert.equal(old.parent,null);assert.ok(disposedGeo>0);assert.equal(layers(stack).length,11);
+const pool=gpu.scene.children.find(n=>n.userData.kind==='confetti');assert.equal(pool.count,100);view.render(s,[{type:'stage-clear'}],.05);const stable=gpu.scene.children.length;for(let i=0;i<50;i++)view.render(s,[{type:'stage-clear'}],.05);assert.equal(gpu.scene.children.length,stable);
+s.phase='paused';view.render(s,[],.05);const pm=Array.from(pool.instanceMatrix.array),positions=layers(stack).map(n=>n.position.y);view.render(s,[],.05);assert.deepEqual(Array.from(pool.instanceMatrix.array),pm);assert.deepEqual(layers(stack).map(n=>n.position.y),positions);
+s.phase='build';s.stage=2;s.stack=[];view.render(s,[],0);assert.equal(layers(stack).length,0);const matrix=new THREE.Matrix4();pool.getMatrixAt(0,matrix);assert.equal(new THREE.Vector3().setFromMatrixScale(matrix).length(),0);
+const geos=new Set(),mats=new Set();gpu.scene.traverse(n=>{if(n.geometry)geos.add(n.geometry);if(n.material)mats.add(n.material);});let dg=0,dm=0;geos.forEach(g=>g.addEventListener('dispose',()=>dg++));mats.forEach(m=>m.addEventListener('dispose',()=>dm++));const count=gpu.count;let prevented=false;view.canvas.listeners.get('webglcontextlost')({preventDefault(){prevented=true;}});assert.ok(prevented);assert.equal(container.events[0].type,'burgerbuddies:render-error');view.render(s,[],.05);assert.equal(gpu.count,count);view.dispose();view.dispose();assert.equal(dg,geos.size);assert.equal(dm,mats.size);assert.equal(gpu.disposed,1);assert.equal(container.children.length,0);
+const quiet=context.createRenderer(new Element(),{reducedMotion:true});s.stack=['bottom_bun'];quiet.render(s,[{type:'wrong'}],.05);const q=gpus[1];assert.equal(q.scene.children.find(n=>n.userData.kind==='confetti').count,24);assert.equal(q.scene.children.find(n=>n.userData.kind==='stack').position.x,2.9);assert.equal(layers(q.scene.children.find(n=>n.userData.kind==='stack'))[0].userData.drop,0);quiet.dispose();
+const fail=vm.createContext({THREE:{...THREE,WebGLRenderer:class{constructor(){throw Error('GPU unavailable');}}},INGREDIENTS,CustomEvent:Event});vm.runInContext(source,fail);const failed=new Element();assert.throws(()=>fail.createRenderer(failed),/GPU unavailable/);assert.equal(failed.children.length,0);
+console.log('Burger Buddies 3D: all 10 volumetric ingredients, ordered separate burgers, engine heights, portrait/landscape 12-layer fit, bounded confetti, pause/reset/reduced-motion, removal/disposal and WebGL lifecycle passed.');
