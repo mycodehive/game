@@ -24,5 +24,9 @@ commands = [
     ['node', 'breakout/render2d.test.mjs'],
     ['node', 'breakout/render3d.test.mjs'],
     ['node', 'breakout/app.test.mjs'],
+    ['node', 'gunarcade/engine.test.mjs'],
+    ['node', 'gunarcade/render3d.test.mjs'],
+    ['node', 'gunarcade/scenarios.test.mjs'],
+    ['node', 'gunarcade/app.test.mjs'],
 ]
 for command in commands: subprocess.run(command, cwd=root, check=True)
