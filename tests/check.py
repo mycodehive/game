@@ -32,5 +32,9 @@ commands = [
     ['node', 'unicornruns/render3d.test.mjs'],
     ['node', 'unicornruns/scenarios.test.mjs'],
     ['node', 'unicornruns/app.test.mjs'],
+    ['node', 'myegg/engine.test.mjs'],
+    ['node', 'myegg/render3d.test.mjs'],
+    ['node', 'myegg/scenarios.test.mjs'],
+    ['node', 'myegg/app.test.mjs'],
 ]
 for command in commands: subprocess.run(command, cwd=root, check=True)
