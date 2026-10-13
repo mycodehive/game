@@ -1,4 +1,4 @@
-﻿
+
 import * as THREE from "./libs/three.module.js";
 import {
   World,
@@ -79,14 +79,26 @@ const KEYSET = new Set([
 ]);
 const keys = new Set();
 
+function isTyping(target) {
+  return target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
 window.addEventListener("keydown", (e) => {
-  if (KEYSET.has(e.code)) e.preventDefault();
-  keys.add(e.code);
+  if (isTyping(e.target)) return;
+  if (KEYSET.has(e.code) && document.getElementById("menu").childElementCount === 0 && !document.querySelector(".result-overlay")) e.preventDefault();
+  if (KEYSET.has(e.code)) keys.add(e.code);
 });
-window.addEventListener("keyup", (e) => {
-  if (KEYSET.has(e.code)) e.preventDefault();
-  keys.delete(e.code);
-});
+window.addEventListener("keyup", (e) => keys.delete(e.code));
+window.addEventListener("blur", () => keys.clear());
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+function readLocalRecords(trackId) {
+  try {
+    const data = JSON.parse(localStorage.getItem(`arcade-racing:${trackId}`) || "[]");
+    return Array.isArray(data) ? data.filter((r) => Number.isFinite(r.totalTimeMs) && r.totalTimeMs > 0 && typeof r.player === "string").slice(0, 5) : [];
+  } catch { return []; }
+}
 
 function pressed(codes) {
   return codes.some((c) => keys.has(c));
@@ -153,10 +165,11 @@ function drawTrackThumbnail(track, canvas) {
   ctx.strokeStyle = "rgba(255,255,255,0.85)";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  const first = map(track.spline[0]);
+  const samples = new THREE.CatmullRomCurve3(track.spline.map((p) => new THREE.Vector3(...p)), true, "catmullrom", 0.5).getSpacedPoints(120);
+  const first = map(samples[0].toArray());
   ctx.moveTo(first.x, first.y);
-  for (let i = 1; i < track.spline.length; i++) {
-    const p = map(track.spline[i]);
+  for (let i = 1; i < samples.length; i++) {
+    const p = map(samples[i].toArray());
     ctx.lineTo(p.x, p.y);
   }
   ctx.closePath();
@@ -338,6 +351,11 @@ class Game {
     this.finished = false;
     this.selectedMode = null;
     this.resultOverlay = null;
+    this.paused = false;
+    this.raceToken = 0;
+    this.countdownRemaining = 0;
+    this.recordSource = "이 기기의 기록";
+    this.touchKeys = new Map();
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -350,14 +368,105 @@ class Game {
     this.audio = new EngineAudio();
     this.bindResize();
 
-    this.wakeAudioOnInput = async () => {
-      await this.audio.start();
-      window.removeEventListener("keydown", this.wakeAudioOnInput);
-    };
-    window.addEventListener("keydown", this.wakeAudioOnInput);
+    this.renderer.domElement.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      this.setPaused(true);
+      showFatalError("3D 화면 연결이 끊어졌습니다. 페이지를 새로고침해 주세요.");
+    });
+    window.addEventListener("keydown", (e) => {
+      if (isTyping(e.target) || e.repeat || e.code !== "Escape") return;
+      if (this.players.length && !this.finished && !this.menuRoot.childElementCount) {
+        e.preventDefault();
+        this.setPaused(!this.paused);
+      }
+    });
+    window.addEventListener("blur", () => this.setPaused(true));
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.setPaused(true); });
+    this.buildRaceControls();
+  }
+
+  clearInput() {
+    keys.clear();
+    this.touchKeys.clear();
+    this.raceControls.querySelectorAll(".pressed").forEach((b) => b.classList.remove("pressed"));
+  }
+
+  stopRace() {
+    this.raceToken++;
+    this.started = false;
+    this.paused = false;
+    this.players = [];
+    this.clearInput();
+    this.countdownOverlay?.remove();
+    this.pauseOverlay?.remove();
+    this.raceControls.hidden = true;
+    if (this.audio.ctx) this.audio.ctx.suspend().catch(() => {});
+  }
+
+  buildRaceControls() {
+    this.raceControls = document.createElement("div");
+    this.raceControls.id = "race-controls";
+    this.raceControls.hidden = true;
+    this.raceControls.innerHTML = `
+      <div class="race-toolbar"><a class="tool-btn" href="../index.html">← PLAYROOM</a><button class="tool-btn" id="pause-race" aria-label="일시정지">Ⅱ 정지</button><button class="tool-btn" id="recover-car">↻ 차량 복구</button></div>
+      <div class="touch-controls" aria-label="터치 운전 조작">
+        <div class="touch-steer"><button data-key="KeyA" aria-label="왼쪽 조향">◀</button><button data-key="KeyD" aria-label="오른쪽 조향">▶</button></div>
+        <div class="touch-drive"><button data-key="Space" class="touch-small" aria-label="핸드브레이크">드리프트</button><button data-key="KeyQ" class="touch-small" aria-label="부스트">부스트</button><button data-key="KeyS" aria-label="브레이크 및 후진">브레이크</button><button data-key="KeyW" class="touch-accelerate" aria-label="가속">가속 ↑</button></div>
+      </div>`;
+    this.app.appendChild(this.raceControls);
+    this.raceControls.querySelector("#pause-race").addEventListener("click", () => this.setPaused(true));
+    this.raceControls.querySelector("#recover-car").addEventListener("click", () => {
+      if (this.started && !this.paused) this.recoverPlayer(this.players[0]);
+    });
+    this.raceControls.querySelectorAll("[data-key]").forEach((button) => {
+      button.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        if (this.paused || this.finished) return;
+        button.setPointerCapture(e.pointerId);
+        this.touchKeys.set(e.pointerId, button.dataset.key);
+        keys.add(button.dataset.key);
+        button.classList.add("pressed");
+      });
+      const release = (e) => {
+        const key = this.touchKeys.get(e.pointerId);
+        this.touchKeys.delete(e.pointerId);
+        if (![...this.touchKeys.values()].includes(key)) keys.delete(key);
+        button.classList.remove("pressed");
+      };
+      button.addEventListener("pointerup", release);
+      button.addEventListener("pointercancel", release);
+      button.addEventListener("lostpointercapture", release);
+    });
+  }
+
+  setPaused(value) {
+    if (!this.players.length || this.finished || this.menuRoot.childElementCount || this.paused === value) return;
+    this.paused = value;
+    this.clearInput();
+    this.accum = 0;
+    this.clock.getDelta();
+    this.pauseOverlay?.remove();
+    if (!value) {
+      if (this.audio.ctx) this.audio.ctx.resume().catch(() => {});
+      return;
+    }
+    if (this.audio.ctx) this.audio.ctx.suspend().catch(() => {});
+    const panel = document.createElement("div");
+    panel.className = "result-overlay pause-overlay";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", "pause-title");
+    panel.innerHTML = `<div class="result-panel"><div class="eyebrow">PIT STOP</div><h2 id="pause-title" class="result-title">잠시 쉬어가세요</h2><p class="menu-sub">주행과 기록 측정이 멈췄습니다.</p><div class="pause-actions"><button class="menu-btn primary" id="resume-race">계속 달리기</button><button class="menu-btn" id="restart-race">처음부터 다시</button><button class="menu-btn" id="leave-race">트랙 선택</button></div><p class="pause-hint">ESC로 다시 달리기 · R로 차량 복구</p></div>`;
+    this.pauseOverlay = panel;
+    this.app.appendChild(panel);
+    panel.querySelector("#resume-race").addEventListener("click", () => this.setPaused(false));
+    panel.querySelector("#restart-race").addEventListener("click", () => this.startRace(this.track, this.playerCount).catch(showFatalError));
+    panel.querySelector("#leave-race").addEventListener("click", () => this.buildTrackMenu());
+    panel.querySelector("#resume-race").focus();
   }
 
   buildModeMenu() {
+    this.stopRace();
     this.started = false;
     this.finished = false;
     this.selectedMode = null;
@@ -369,21 +478,14 @@ class Game {
     const container = document.createElement("div");
     container.className = "menu-overlay";
     container.innerHTML = `
-      <div class="menu-title">Player Select</div>
-      <div class="menu-sub">플레이 인원을 먼저 선택하세요.</div>
-      <div class="menu-actions" style="flex-direction:column;align-items:center;gap:8px;">
-        <input id="name-p1" class="menu-name-input" maxlength="14" placeholder="PLAYER 1 (optional)" />
-        <input id="name-p2" class="menu-name-input" maxlength="14" placeholder="PLAYER 2 (optional)" />
-      </div>
-      <div class="menu-actions">
-        <button class="menu-btn" id="one-player">1 PLAYER</button>
-        <button class="menu-btn" id="two-player">2 PLAYER</button>
-      </div>
-      <div class="menu-sub" style="font-size:.9rem;line-height:1.5;">
-        1P: W/A/S/D + SPACE + Q + R<br>
-        2P: P1(W/A/S/D), P2(ARROW) / P2 HAND(Numpad0), BOOST(Right Shift), RESET(Enter)
-      </div>
-    `;
+      <nav class="menu-nav"><a href="../index.html">← PLAYROOM</a><span class="status-pill">LIVE · 실시간 3D</span></nav>
+      <div class="mode-layout">
+        <section class="mode-hero"><div class="eyebrow">APEX / RACING CLUB</div><h1 class="menu-title">코너를 넘어,<br><span>한계를 넘어.</span></h1><p class="menu-sub">엔진을 깨우고 나만의 레이싱 라인을 찾으세요.<br>10개의 서킷과 실제 차량 물리가 기다립니다.</p><div class="hero-car" aria-hidden="true"><div class="car-glow"></div><div class="car-body"><div class="car-window"></div><div class="car-stripe"></div></div><div class="car-wheel wheel-left"></div><div class="car-wheel wheel-right"></div><div class="speed-line line-one"></div><div class="speed-line line-two"></div></div><div class="hero-stats"><span><b>10</b>서킷</span><span><b>1–2</b>플레이어</span><span><b>3D</b>물리 주행</span></div></section>
+        <section class="mode-panel"><div class="eyebrow">01 / 플레이 모드</div><h2>어떻게 달릴까요?</h2><p>이름을 입력하고 원하는 모드를 선택하세요.</p><label for="name-p1">플레이어 1 이름 <span>선택</span></label><input id="name-p1" class="menu-name-input" maxlength="14" placeholder="드라이버 1" autocomplete="nickname" /><label for="name-p2">플레이어 2 이름 <span>2인 모드 · 선택</span></label><input id="name-p2" class="menu-name-input" maxlength="14" placeholder="드라이버 2" />
+          <div class="mode-buttons"><button class="menu-btn primary" id="one-player"><b>혼자 달리기 →</b><small>타임어택 · 터치 조작 지원</small></button><button class="menu-btn" id="two-player"><b>둘이 경쟁하기 →</b><small>한 화면, 두 드라이버 · 키보드 필요</small></button></div>
+          <details class="control-guide"><summary>운전 조작 알아보기</summary><p><kbd>W</kbd> / <kbd>↑</kbd> 가속 · <kbd>S</kbd> / <kbd>↓</kbd> 브레이크·후진<br><kbd>A D</kbd> / <kbd>← →</kbd> 조향 · <kbd>Space</kbd> 드리프트<br><kbd>Q</kbd> 부스트 · <kbd>R</kbd> 차량 복구 · <kbd>Esc</kbd> 일시정지</p><p>2인: P1은 WASD / Space / Q / R,<br>P2는 방향키 / Numpad0 또는 / / 오른쪽 Shift / Enter.</p></details>
+        </section>
+      </div>`;
     this.menuRoot.innerHTML = "";
     this.menuRoot.appendChild(container);
     container.querySelector("#name-p1").value = this.pendingNames[0] || "";
@@ -405,24 +507,22 @@ class Game {
   }
 
   buildTrackMenu() {
+    this.stopRace();
     this.hudRoot.classList.add("hud-hidden");
     this.hudRoot.innerHTML = "";
     this.splitDivider.style.display = "none";
 
     const sections = [
-      { id: "beginner", title: "Beginner (3)" },
-      { id: "intermediate", title: "Intermediate (4)" },
-      { id: "pro", title: "Pro (3)" }
+      { id: "beginner", title: "01 / 입문 서킷 · 넓고 부드러운 코너" },
+      { id: "intermediate", title: "02 / 챌린저 · 정교한 레이싱 라인" },
+      { id: "pro", title: "03 / 프로 서킷 · 한계에 도전하기" }
     ];
 
     const container = document.createElement("div");
     container.className = "menu-overlay";
     container.innerHTML = `
-      <div class="menu-title">Track Select</div>
-      <div class="menu-sub">${this.selectedMode}인용 모드 - 트랙을 선택하세요.</div>
-      <div class="menu-actions">
-        <button class="menu-btn" id="back-mode">BACK</button>
-      </div>
+      <nav class="menu-nav"><button class="tool-btn" id="back-mode">← 플레이 모드</button><span class="status-pill">${this.selectedMode}인 · ${this.selectedMode === 1 ? "타임어택" : "화면 분할 경쟁"}</span></nav>
+      <div class="track-heading"><div class="eyebrow">02 / PICK YOUR CIRCUIT</div><h1 class="menu-title">오늘의 서킷을 선택하세요.</h1><p class="menu-sub">트랙을 선택하면 3초 뒤 출발합니다. 첫 주행은 입문 서킷을 추천해요.</p></div>
     `;
 
     for (const sec of sections) {
@@ -452,11 +552,11 @@ class Game {
 
         const meta = document.createElement("div");
         meta.className = "track-meta";
-        meta.textContent = `${track.laps} Laps / Width ${track.width}`;
+        meta.textContent = `${track.laps}바퀴 · 폭 ${track.width}m · ${Math.round(new THREE.CatmullRomCurve3(track.spline.map((p) => new THREE.Vector3(...p)), true).getLength())}m / 바퀴`;
         btn.appendChild(meta);
 
         btn.addEventListener("click", () => {
-          this.startRace(track, this.selectedMode);
+          this.startRace(track, this.selectedMode).catch(showFatalError);
         });
         grid.appendChild(btn);
       }
@@ -479,10 +579,11 @@ class Game {
       const panel = document.createElement("div");
       panel.className = `hud-player ${index === 0 ? "p1" : "p2"}`;
       panel.innerHTML = `
-        <div class="hud-player-title">${player.name}</div>
+        <div class="hud-player-title">${escapeHtml(player.name)}</div>
         <div class="hud-player-speed">0 km/h</div>
-        <div class="hud-player-lap">LAP 1/${this.track.laps}</div>
+        <div class="hud-player-lap">랩 1 / ${this.track.laps}</div>
         <div class="hud-player-time">00:00.000</div>
+        <div class="boost-label">BOOST / Q</div><div class="boost-track"><div class="boost-fill"></div></div>
         <div class="hud-player-warning"></div>
       `;
       this.hudRoot.appendChild(panel);
@@ -491,6 +592,7 @@ class Game {
         speed: panel.querySelector(".hud-player-speed"),
         lap: panel.querySelector(".hud-player-lap"),
         time: panel.querySelector(".hud-player-time"),
+        boost: panel.querySelector(".boost-fill"),
         warning: panel.querySelector(".hud-player-warning")
       };
     });
@@ -498,7 +600,7 @@ class Game {
     this.rankingBox = document.createElement("div");
     this.rankingBox.className = "hud-ranking";
     this.rankingBox.innerHTML = `
-      <div class="hud-ranking-title">TOP 5 - ${this.track.name}</div>
+      <div class="hud-ranking-title">${this.recordSource} · ${this.track.name}</div>
       <ul class="hud-ranking-list"></ul>
     `;
     this.hudRoot.appendChild(this.rankingBox);
@@ -508,7 +610,7 @@ class Game {
     if (this.playerCount === 1) {
       const hint = document.createElement("div");
       hint.className = "hud-controls-hint";
-      hint.textContent = "W/↑ Accel  S/↓ Brake  A/← D/→ Steer  SPACE Handbrake  Q Boost  R Reset";
+      hint.textContent = "W/↑ 가속 · S/↓ 브레이크 · A/D 조향 · Q 부스트 · R 복구 · ESC 정지";
       this.hudRoot.appendChild(hint);
       setTimeout(() => {
         hint.classList.add("fade-out");
@@ -522,7 +624,7 @@ class Game {
     this.rankingListEl.innerHTML = "";
     if (!Array.isArray(this.trackTop5) || this.trackTop5.length === 0) {
       const li = document.createElement("li");
-      li.innerHTML = "<span>No records yet</span><span>-</span>";
+      li.innerHTML = "<span>첫 기록에 도전하세요</span><span>—</span>";
       this.rankingListEl.appendChild(li);
       return;
     }
@@ -531,12 +633,22 @@ class Game {
       const li = document.createElement("li");
       const name = r.player || "Unknown";
       const t = formatMs(Number(r.totalTimeMs || 0));
-      li.innerHTML = `<span>${idx + 1}. ${name}</span><span>${t}</span>`;
+      li.innerHTML = `<span>${idx + 1}. ${escapeHtml(name)}</span><span>${t}</span>`;
       this.rankingListEl.appendChild(li);
     });
   }
 
   setupRace(track, playerCount) {
+    this.clearInput();
+    this.pauseOverlay?.remove();
+    this.countdownOverlay?.remove();
+    this.paused = false;
+    this.accum = 0;
+    this.clock.getDelta();
+    this.disposeScene();
+    this.raceControls.hidden = false;
+    this.raceControls.classList.toggle("single-player", playerCount === 1);
+    this.hudRoot.classList.toggle("split-mode", playerCount === 2);
     this.track = track;
     this.playerCount = playerCount;
     this.started = false;
@@ -551,7 +663,8 @@ class Game {
     }
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb);
+    this.scene.background = new THREE.Color(0x9baaba);
+    this.scene.fog = new THREE.Fog(0x8196ae, 320, 800);
 
     this.physics = new World();
     this.physics.gravity.set(0, -9.82, 0);
@@ -592,7 +705,7 @@ class Game {
     this.splitDivider.style.display = this.playerCount === 2 ? "block" : "none";
   }
   initWorld() {
-    const sun = new THREE.DirectionalLight(0xffffff, 2);
+    const sun = new THREE.DirectionalLight(0xffe6c2, 2.5);
     sun.position.set(60, 65, 50);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -601,15 +714,15 @@ class Game {
     sun.shadow.camera.top = 220;
     sun.shadow.camera.bottom = -220;
     this.scene.add(sun);
-    this.scene.add(new THREE.AmbientLight(0x404040, 0.5));
-    this.scene.add(new THREE.HemisphereLight(0x87ceeb, 0x362f27, 0.3));
+    this.scene.add(new THREE.AmbientLight(0x829ac9, 0.9));
+    this.scene.add(new THREE.HemisphereLight(0xb4c6f0, 0x17282c, 1.1));
 
     const skyGeo = new THREE.SphereGeometry(700, 32, 15);
     const skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: {
-        topColor: { value: new THREE.Color(0x0077ff) },
-        bottomColor: { value: new THREE.Color(0x87ceeb) },
+        topColor: { value: new THREE.Color(0x253b67) },
+        bottomColor: { value: new THREE.Color(0xd5c3ae) },
         offset: { value: 33 },
         exponent: { value: 0.6 }
       },
@@ -621,7 +734,7 @@ class Game {
     const groundSize = Math.max(this.bounds.maxX - this.bounds.minX, this.bounds.maxZ - this.bounds.minZ) + 600;
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(groundSize, groundSize),
-      new THREE.MeshStandardMaterial({ color: 0x3a7a2a, roughness: 0.9 })
+      new THREE.MeshStandardMaterial({ color: 0x294740, roughness: 0.9 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -629,6 +742,7 @@ class Game {
 
     const groundBody = new Body({ mass: 0, shape: new Plane() });
     groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    groundBody.aabbNeedsUpdate = true;
     this.physics.addBody(groundBody);
 
     this.buildTrack();
@@ -664,7 +778,7 @@ class Game {
     geo.setIndex(idx);
     geo.computeVertexNormals();
 
-    const road = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.82 }));
+    const road = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x25323f, roughness: 0.82 }));
     road.receiveShadow = true;
     this.scene.add(road);
 
@@ -687,7 +801,7 @@ class Game {
     const len = 320;
     const unit = 6;
     const count = Math.floor(len / unit);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x577583, metalness: 0.6, roughness: 0.35 });
 
     for (let i = 0; i < count; i++) {
       const t1 = (i * unit) / len;
@@ -714,6 +828,7 @@ class Game {
         body.addShape(new Box(new Vec3(0.15, 0.5, segLen / 2)));
         body.position.set(c.x, c.y, c.z);
         body.quaternion.setFromEuler(0, yaw, 0);
+        body.aabbNeedsUpdate = true;
         this.physics.addBody(body);
       }
     }
@@ -797,13 +912,26 @@ class Game {
     for (const cp of this.checkpoints) {
       const gate = new THREE.Mesh(
         geo,
-        new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false })
+        new THREE.MeshBasicMaterial({ color: 0x55f1d9, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false })
       );
       gate.scale.x = cp.width;
       gate.position.set(cp.position[0], 1.5, cp.position[2]);
       const f = new THREE.Vector3(cp.forward[0], cp.forward[1], cp.forward[2]);
       gate.lookAt(gate.position.clone().add(f));
       this.scene.add(gate);
+      const arch = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x346274, emissive: 0x135c6e, emissiveIntensity: 0.75, roughness: 0.45 });
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5.5, 0.45), mat);
+        post.position.set(side * (cp.width / 2 + 0.5), 2.75, 0);
+        arch.add(post);
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(cp.width + 1.35, 0.3, 0.5), mat);
+      beam.position.y = 5.5;
+      arch.add(beam);
+      arch.position.set(cp.position[0], 0, cp.position[2]);
+      arch.rotation.y = Math.atan2(cp.forward[0], cp.forward[2]);
+      this.scene.add(arch);
     }
   }
 
@@ -811,7 +939,7 @@ class Game {
     const trunkGeo = new THREE.CylinderGeometry(0.3, 0.4, 3, 6);
     const crownGeo = new THREE.ConeGeometry(1.8, 8, 6);
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
-    const crownMat = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+    const crownMat = new THREE.MeshStandardMaterial({ color: 0x245e53 });
     const rx = (this.bounds.maxX - this.bounds.minX) * 0.6 + 110;
     const rz = (this.bounds.maxZ - this.bounds.minZ) * 0.6 + 110;
     const cx = (this.bounds.minX + this.bounds.maxX) * 0.5;
@@ -836,16 +964,30 @@ class Game {
   createPlayer(index, controls, name) {
     const group = new THREE.Group();
     const chassisGroup = new THREE.Group();
-    const color = index === 0 ? 0xff3366 : 0x33aaff;
+    const color = index === 0 ? 0x3bdbcd : 0xfd9957;
 
-    const base = new THREE.Mesh(new THREE.BoxGeometry(2, 0.4, 4), new THREE.MeshStandardMaterial({ color }));
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2, 0.4, 4), new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.55 }));
     base.castShadow = true;
     chassisGroup.add(base);
 
-    const top = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 2), new THREE.MeshStandardMaterial({ color: color - 0x222222 }));
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 2), new THREE.MeshStandardMaterial({ color: 0x142e42, roughness: 0.15, metalness: 0.65 }));
     top.position.set(0, 0.37, -0.3);
     top.castShadow = true;
     chassisGroup.add(top);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.01, 3.95), new THREE.MeshStandardMaterial({ color: 0xf5ffff }));
+    stripe.position.set(-0.42, 0.21, 0);
+    chassisGroup.add(stripe);
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.12, 0.45), new THREE.MeshStandardMaterial({ color: 0x142535, metalness: 0.4, roughness: 0.35 }));
+    spoiler.position.set(0, 0.55, -1.65);
+    chassisGroup.add(spoiler);
+    for (const side of [-1, 1]) {
+      const headlight = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.13, 0.03), new THREE.MeshStandardMaterial({ color: 0xf1ffff, emissive: 0x9fe9ff, emissiveIntensity: 2 }));
+      headlight.position.set(side * 0.64, 0.08, 2.01);
+      chassisGroup.add(headlight);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.1, 0.03), new THREE.MeshStandardMaterial({ color: 0xf14a55, emissive: 0xf12233, emissiveIntensity: 1.5 }));
+      tail.position.set(side * 0.62, 0.06, -2.01);
+      chassisGroup.add(tail);
+    }
     const nameTag = createNameTagSprite(name);
     chassisGroup.add(nameTag);
     group.add(chassisGroup);
@@ -906,7 +1048,10 @@ class Game {
       lapTimes: [],
       bestLap: Infinity,
       currentLap: 1,
-      currentCheckpoint: 0,
+      currentCheckpoint: 1,
+      resetHeld: false,
+      boostEnergy: 1,
+      checkpointPreviousSide: null,
       finished: false,
       finishTime: null,
       hud: null,
@@ -915,6 +1060,8 @@ class Game {
     };
 
     this.resetPlayer(player, index === 0 ? -1 : 1);
+    this.syncPlayerVisual(player);
+    this.updateCamera(player, 1, 0);
     return player;
   }
 
@@ -926,6 +1073,7 @@ class Game {
     player.chassisBody.quaternion.copy(q);
     player.chassisBody.velocity.setZero();
     player.chassisBody.angularVelocity.setZero();
+    player.chassisBody.aabbNeedsUpdate = true;
 
     for (let i = 0; i < 4; i++) {
       player.vehicle.applyEngineForce(0, i);
@@ -954,7 +1102,7 @@ class Game {
     const ox = ((span - (b.maxX - b.minX) * s) * 0.5) + pad;
     const oy = ((span - (b.maxZ - b.minZ) * s) * 0.5) + pad;
     this.mmScale = { b, s, ox, oy };
-    this.mmSpline = this.track.spline.map((p) => ({ x: (p[0] - b.minX) * s + ox, y: (p[2] - b.minZ) * s + oy }));
+    this.mmSpline = this.spline.getSpacedPoints(120).map((p) => ({ x: (p.x - b.minX) * s + ox, y: (p.z - b.minZ) * s + oy }));
     this.mmCp = this.checkpoints.map((cp) => ({ x: (cp.position[0] - b.minX) * s + ox, y: (cp.position[2] - b.minZ) * s + oy }));
   }
   initParticles() {
@@ -969,13 +1117,15 @@ class Game {
     for (let i = 0; i < this.dustMax; i++) this.dustPos[i * 3 + 1] = -1000;
   }
 
-  applyInput(player) {
+  applyInput(player, dt) {
     const i = getInput(player.controls);
-    const steer = -i.steer * CAR.maxSteerAngle;
+    const steer = -i.steer * CAR.maxSteerAngle / (1 + Math.abs(this.getSpeed(player)) / 150);
     player.vehicle.setSteeringValue(steer, 0);
     player.vehicle.setSteeringValue(steer, 1);
 
-    const power = i.boost ? 5 : 1;
+    const boosting = i.boost && i.accelerate && player.boostEnergy > 0;
+    player.boostEnergy = Math.max(0, Math.min(1, player.boostEnergy + (boosting ? -0.28 : 0.13) * dt));
+    const power = boosting ? 2.4 : 1;
     const engine = ((i.brake ? 1 : 0) - (i.accelerate ? 1 : 0)) * CAR.maxEngineForce * power;
     player.vehicle.applyEngineForce(engine, 2);
     player.vehicle.applyEngineForce(engine, 3);
@@ -985,7 +1135,8 @@ class Game {
       player.vehicle.setBrake(CAR.maxBrakeForce * 2, 2);
       player.vehicle.setBrake(CAR.maxBrakeForce * 2, 3);
     }
-    if (i.resetCar) this.resetPlayer(player, player.index === 0 ? -1 : 1);
+    if (i.resetCar && !player.resetHeld) this.recoverPlayer(player);
+    player.resetHeld = i.resetCar;
     return i;
   }
 
@@ -1044,66 +1195,113 @@ class Game {
     const cp = this.checkpoints[player.currentCheckpoint];
     const p = player.chassisGroup.position;
     const dx = p.x - cp.position[0];
-    const dy = p.y - cp.position[1];
     const dz = p.z - cp.position[2];
-
-    if (Math.sqrt(dx * dx + dy * dy + dz * dz) < Math.max(5, this.track.width * 0.45)) {
-      player.currentCheckpoint++;
-      if (player.currentCheckpoint >= this.checkpoints.length) {
-        player.currentCheckpoint = 0;
-        const lap = player.raceTime - player.lapStartTime;
-        player.lapTimes.push(lap);
-        player.bestLap = Math.min(player.bestLap, lap);
-        player.lapStartTime = player.raceTime;
-
-        if (player.currentLap >= this.track.laps) {
-          player.finished = true;
-          player.finishTime = player.raceTime;
-          this.onPlayerFinished(player);
-        } else {
-          player.currentLap++;
-        }
-      }
+    const side = dx * cp.forward[0] + dz * cp.forward[2];
+    const across = Math.abs(dx * cp.forward[2] - dz * cp.forward[0]);
+    // Count only forward crossings, in quarter-circuit order, then across the start line.
+    const crossed = player.checkpointPreviousSide !== null && player.checkpointPreviousSide < 0 && side >= 0;
+    player.checkpointPreviousSide = side;
+    if (!crossed || across > this.track.width * 0.5 + 1 || p.y > 4) return;
+    if (player.currentCheckpoint !== 0) {
+      player.currentCheckpoint = (player.currentCheckpoint + 1) % this.checkpoints.length;
+      player.checkpointPreviousSide = null;
+      return;
+    }
+    const lap = player.raceTime - player.lapStartTime;
+    player.lapTimes.push(lap);
+    player.bestLap = Math.min(player.bestLap, lap);
+    player.lapStartTime = player.raceTime;
+    player.currentCheckpoint = 1;
+    player.checkpointPreviousSide = null;
+    if (player.currentLap >= this.track.laps) {
+      player.finished = true;
+      player.finishTime = player.raceTime;
+      this.onPlayerFinished(player);
+    } else {
+      player.currentLap++;
     }
   }
 
-  async fetchTrackTop5(trackId) {
-    try {
-      const res = await fetch(`/api/records?trackId=${encodeURIComponent(trackId)}`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data.top5) ? data.top5 : [];
-    } catch {
-      return [];
+  disposeScene() {
+    if (!this.scene) return;
+    const geometries = new Set(), materials = new Set(), textures = new Set();
+    this.scene.traverse((node) => {
+      if (node.geometry) geometries.add(node.geometry);
+      if (node.material) for (const mat of (Array.isArray(node.material) ? node.material : [node.material])) materials.add(mat);
+    });
+    for (const mat of materials) {
+      for (const value of Object.values(mat)) if (value?.isTexture) textures.add(value);
+      mat.dispose();
     }
+    for (const geo of geometries) geo.dispose();
+    for (const tex of textures) tex.dispose();
+  }
+
+  recoverPlayer(player) {
+    // Recover on the current circuit section without skipping the next checkpoint.
+    const lastGate = (player.currentCheckpoint + 3) % 4;
+    const t = (lastGate / 4 + 0.015) % 1;
+    const point = this.spline.getPointAt(t), tangent = this.spline.getTangentAt(t).normalize();
+    const side = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
+    point.addScaledVector(side, this.playerCount === 2 ? (player.index === 0 ? -2 : 2) : 0);
+    player.chassisBody.position.set(point.x, 0.8, point.z);
+    player.chassisBody.quaternion.setFromEuler(0, Math.atan2(tangent.x, tangent.z), 0);
+    player.chassisBody.velocity.setZero();
+    player.chassisBody.angularVelocity.setZero();
+    player.chassisBody.aabbNeedsUpdate = true;
+    player.checkpointPreviousSide = null;
+    this.applyNeutral(player);
+    this.syncPlayerVisual(player);
+    this.updateCamera(player, 1, 0);
+  }
+
+  async fetchTrackTop5(trackId) {
+    const local = readLocalRecords(trackId);
+    this.recordSource = "이 기기의 기록";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1200);
+    try {
+      const res = await fetch(`/api/records?trackId=${encodeURIComponent(trackId)}`, { signal: controller.signal });
+      if (!res.ok) return local;
+      const data = await res.json();
+      if (!Array.isArray(data.top5)) return local;
+      this.recordSource = "온라인 TOP 5";
+      return data.top5;
+    } catch { return local; }
+    finally { clearTimeout(timer); }
   }
 
   async saveRecord(trackId, player) {
     if (!player || !player.finishTime) return;
     const payload = {
-      trackId,
-      player: player.name,
+      trackId, player: player.name,
       totalTimeMs: Math.round(player.finishTime * 1000),
       bestLapMs: Number.isFinite(player.bestLap) ? Math.round(player.bestLap * 1000) : 0
     };
     try {
-      await fetch("/api/records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-    } catch {
-    }
+      const records = [...readLocalRecords(trackId), payload].sort((a, b) => a.totalTimeMs - b.totalTimeMs).slice(0, 5);
+      localStorage.setItem(`arcade-racing:${trackId}`, JSON.stringify(records));
+    } catch { /* Private mode still permits racing without persisted records. */ }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1200);
+    try {
+      await fetch("/api/records", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal });
+    } catch { /* Local records remain available when no record server is installed. */ }
+    finally { clearTimeout(timer); }
   }
 
   async persistRaceRecords(playersToSave) {
     if (this.recordsSaved || !this.track) return;
     this.recordsSaved = true;
+    const trackId = this.track.id;
+    const token = this.raceToken;
     const list = (playersToSave || []).filter((p) => p && p.finishTime);
     for (const p of list) {
-      await this.saveRecord(this.track.id, p);
+      await this.saveRecord(trackId, p);
     }
-    this.trackTop5 = await this.fetchTrackTop5(this.track.id);
+    const top5 = await this.fetchTrackTop5(trackId);
+    if (token !== this.raceToken) return;
+    this.trackTop5 = top5;
     this.renderTrackRanking();
   }
 
@@ -1122,7 +1320,6 @@ class Game {
     this.started = false;
     this.finished = true;
     const loser = this.players.find((p) => p !== player);
-    if (loser && !loser.finishTime) loser.finishTime = loser.raceTime;
     this.persistRaceRecords([player]);
     this.showMultiResult(player, loser);
   }
@@ -1158,8 +1355,9 @@ class Game {
   updatePlayerHud(player, speed) {
     if (!player.hud) return;
     player.hud.speed.textContent = `${Math.round(Math.abs(speed))} km/h`;
-    player.hud.lap.textContent = `LAP ${Math.min(player.currentLap, this.track.laps)}/${this.track.laps}`;
+    player.hud.lap.textContent = `랩 ${Math.min(player.currentLap, this.track.laps)} / ${this.track.laps} · 체크 ${player.currentCheckpoint === 0 ? 3 : player.currentCheckpoint - 1}/3`;
     player.hud.time.textContent = formatMs(player.raceTime * 1000);
+    player.hud.boost.style.width = `${Math.round(player.boostEnergy * 100)}%`;
     player.hud.warning.textContent = player.wrongWay ? "역주행입니다! 반대로 가세요!" : "";
   }
 
@@ -1254,14 +1452,14 @@ class Game {
     wrap.className = "result-overlay";
     wrap.innerHTML = `
       <div class="result-panel">
-        <div class="result-title">${p.name} FINISHED!</div>
+        <div class="result-title">${escapeHtml(p.name)} 완주!</div>
         <div class="result-total-time">${formatMs(p.raceTime * 1000)}</div>
-        <div class="result-best-lap">Best Lap: ${formatMs(p.bestLap * 1000)}</div>
+        <div class="result-best-lap">베스트 랩: ${formatMs(p.bestLap * 1000)}</div>
         <ul class="result-lap-list">
-          ${p.lapTimes.map((t, i) => `<li class="${t === p.bestLap ? "best" : ""}"><span>Lap ${i + 1}</span><span>${formatMs(t * 1000)}</span></li>`).join("")}
+          ${p.lapTimes.map((t, i) => `<li class="${t === p.bestLap ? "best" : ""}"><span>랩 ${i + 1}</span><span>${formatMs(t * 1000)}</span></li>`).join("")}
         </ul>
-        <button class="result-restart-btn" id="retry-btn">RETRY</button>
-        <button class="result-restart-btn" id="menu-btn" style="margin-left:8px;border-color:#ffffff88;">TRACK MENU</button>
+        <button class="result-restart-btn" id="retry-btn">다시 달리기</button>
+        <button class="result-restart-btn" id="menu-btn" style="margin-left:8px;border-color:#ffffff88;">트랙 선택</button>
       </div>
     `;
     this.mountResult(wrap);
@@ -1272,29 +1470,35 @@ class Game {
     wrap.className = "result-overlay";
     wrap.innerHTML = `
       <div class="result-panel">
-        <div class="result-title">${winner.name} WINS!</div>
-        <div class="result-total-time">${winner.name}: ${formatMs(winner.finishTime * 1000)}</div>
-        <div class="result-best-lap">${loser.name}: ${formatMs(loser.finishTime * 1000)}</div>
+        <div class="result-title">${escapeHtml(winner.name)} 우승!</div>
+        <div class="result-total-time">${escapeHtml(winner.name)}: ${formatMs(winner.finishTime * 1000)}</div>
+        <div class="result-best-lap">${escapeHtml(loser.name)}: ${loser.finished ? formatMs(loser.finishTime * 1000) : `미완주 · ${loser.currentLap}바퀴 주행 중`}</div>
         <ul class="result-lap-list">
-          <li><span>${winner.name} Best Lap</span><span>${formatMs(winner.bestLap * 1000)}</span></li>
-          <li><span>${loser.name} Best Lap</span><span>${formatMs(loser.bestLap * 1000)}</span></li>
+          <li><span>${escapeHtml(winner.name)} 베스트 랩</span><span>${formatMs(winner.bestLap * 1000)}</span></li>
+          <li><span>${escapeHtml(loser.name)} 베스트 랩</span><span>${Number.isFinite(loser.bestLap) ? formatMs(loser.bestLap * 1000) : "—"}</span></li>
         </ul>
-        <button class="result-restart-btn" id="retry-btn">RETRY</button>
-        <button class="result-restart-btn" id="menu-btn" style="margin-left:8px;border-color:#ffffff88;">TRACK MENU</button>
+        <button class="result-restart-btn" id="retry-btn">다시 달리기</button>
+        <button class="result-restart-btn" id="menu-btn" style="margin-left:8px;border-color:#ffffff88;">트랙 선택</button>
       </div>
     `;
     this.mountResult(wrap);
   }
 
   mountResult(wrap) {
+    this.clearInput();
+    this.raceControls.hidden = true;
+    if (this.audio.ctx) this.audio.ctx.suspend().catch(() => {});
+    wrap.setAttribute("role", "dialog");
+    wrap.setAttribute("aria-modal", "true");
     if (this.resultOverlay) this.resultOverlay.remove();
     this.resultOverlay = wrap;
     this.app.appendChild(wrap);
 
+    wrap.querySelector("#retry-btn").focus();
     wrap.querySelector("#retry-btn").addEventListener("click", () => {
       wrap.remove();
       this.resultOverlay = null;
-      this.startRace(this.track, this.playerCount);
+      this.startRace(this.track, this.playerCount).catch(showFatalError);
     });
 
     wrap.querySelector("#menu-btn").addEventListener("click", () => {
@@ -1304,27 +1508,26 @@ class Game {
     });
   }
 
-  async runCountdown() {
-    const overlay = document.createElement("div");
-    overlay.className = "countdown-overlay";
-    this.app.appendChild(overlay);
-    for (const text of ["3", "2", "1", "GO!"]) {
-      overlay.innerHTML = `<span class="countdown-text">${text}</span>`;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-    overlay.remove();
-  }
-
   async startRace(track, playerCount) {
-    this.trackTop5 = await this.fetchTrackTop5(track.id);
+    const token = ++this.raceToken;
+    this.started = false;
+    this.paused = true;
+    this.raceControls.hidden = true;
+    this.clearInput();
+    this.pauseOverlay?.remove();
+    this.menuRoot.querySelectorAll("button").forEach((b) => b.disabled = true);
+    this.audio.start().catch(() => {});
+    if (this.audio.ctx) this.audio.ctx.resume().catch(() => {});
+    const records = await this.fetchTrackTop5(track.id);
+    if (token !== this.raceToken) return;
+    this.trackTop5 = records;
     this.setupRace(track, playerCount);
-    await this.runCountdown();
-    this.started = true;
-
-    if (!this.loopStarted) {
-      this.loopStarted = true;
-      this.loop();
-    }
+    this.countdownRemaining = 3;
+    this.countdownOverlay = document.createElement("div");
+    this.countdownOverlay.className = "countdown-overlay";
+    this.countdownOverlay.innerHTML = '<span class="countdown-number">3</span><span class="countdown-caption">출발 준비</span>';
+    this.app.appendChild(this.countdownOverlay);
+    this.clock.getDelta();
   }
 
   renderScene() {
@@ -1369,10 +1572,10 @@ class Game {
   }
 
   async start() {
-    this.loadingText.textContent = "Preparing menu...";
+    this.loadingText.textContent = "플레이 메뉴를 준비하고 있습니다…";
     this.loadingBar.style.width = "50%";
     await new Promise((r) => setTimeout(r, 120));
-    this.loadingText.textContent = "Building systems...";
+    this.loadingText.textContent = "3D 엔진 준비 완료";
     this.loadingBar.style.width = "100%";
     await new Promise((r) => setTimeout(r, 120));
     this.loading.style.opacity = "0";
@@ -1392,26 +1595,36 @@ class Game {
 
     const dt = Math.min(this.clock.getDelta(), 0.1);
 
+    if (this.paused || this.finished) { this.renderScene(); return; }
+    if (!this.started && this.countdownRemaining > 0) {
+      this.countdownRemaining -= dt;
+      const number = Math.max(1, Math.ceil(this.countdownRemaining));
+      this.countdownOverlay.querySelector(".countdown-number").textContent = number;
+      if (this.countdownRemaining <= 0) {
+        this.countdownOverlay.remove();
+        this.started = true;
+      }
+    }
+    // Apply vehicle forces before the next physics step, then read the updated pose.
+    for (const player of this.players) {
+      if (this.started && !player.finished) this.applyInput(player, dt);
+      else this.applyNeutral(player);
+    }
     this.accum += dt;
     while (this.accum >= this.fixedDt) {
       this.physics.step(this.fixedDt);
       this.accum -= this.fixedDt;
     }
-
     for (const player of this.players) {
-      const input = this.started ? this.applyInput(player) : { boost: false, accelerate: false, handbrake: false };
-      if (!this.started) this.applyNeutral(player);
       this.syncPlayerVisual(player);
       const speed = this.getSpeed(player);
-      this.updateRace(player, dt);
+      this.updateRace(player, this.started ? dt : 0);
       this.updateWrongWay(player, speed);
       this.updatePlayerHud(player, speed);
-      this.updateCamera(player, dt, this.started && input.boost ? Math.max(Math.abs(speed), 180) : speed);
+      this.updateCamera(player, dt, speed);
     }
-
     if (this.started) {
-      const p0 = this.players[0];
-      const input0 = getInput(p0.controls);
+      const p0 = this.players[0], input0 = getInput(p0.controls);
       this.audio.update(this.getSpeed(p0), input0.accelerate, input0.handbrake);
     }
 
@@ -1425,15 +1638,22 @@ class Game {
 const loadingTextEl = document.getElementById("loading-text");
 const loadingBarEl = document.getElementById("loading-bar");
 
+function showFatalError(error) {
+  console.error(error);
+  const loading = document.getElementById("loading-screen");
+  loading.style.display = "block";
+  loading.style.opacity = "1";
+  loadingTextEl.textContent = typeof error === "string" ? error : "3D 게임을 시작할 수 없습니다. WebGL과 하드웨어 가속이 활성화된 브라우저에서 다시 시도해 주세요.";
+  loadingBarEl.style.width = "100%";
+  if (!loading.querySelector(".error-actions")) {
+    const actions = document.createElement("div");
+    actions.className = "error-actions";
+    actions.innerHTML = '<button class="menu-btn primary" id="reload-game">다시 시도</button><a class="menu-btn" href="../index.html">PLAYROOM</a>';
+    actions.querySelector("button").addEventListener("click", () => location.reload());
+    loading.querySelector(".loading-inner").appendChild(actions);
+  }
+}
 try {
   const game = new Game();
-  game.start().catch((err) => {
-    console.error(err);
-    if (loadingBarEl) loadingBarEl.style.width = "100%";
-    if (loadingTextEl) loadingTextEl.textContent = `Error: ${err?.message || "init failed"}`;
-  });
-} catch (err) {
-  console.error(err);
-  if (loadingBarEl) loadingBarEl.style.width = "100%";
-  if (loadingTextEl) loadingTextEl.textContent = `Error: ${err?.message || "init failed"}`;
-}
+  game.start().catch(showFatalError);
+} catch (error) { showFatalError(error); }

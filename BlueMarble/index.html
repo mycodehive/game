@@ -1,18 +1,35 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Blue Marble MVP</title>
+  <meta name="theme-color" content="#080e1c" />
+  <title>Blue Marble 3D — PLAYROOM</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main class="page">
-    <h1>블루마블 MVP</h1>
+    <header class="game-header">
+      <a class="back-link" href="../">← PLAYROOM</a>
+      <div><p class="eyebrow">LOCAL MULTIPLAYER · 2–4 PLAYERS</p><h1>BLUE MARBLE <span>3D</span></h1><p class="subtitle">도시를 사고, 건물을 올리고, 나만의 제국을 만드세요.</p></div>
+      <span class="header-badge">도시 전략</span>
+    </header>
 
     <section class="app-layout">
       <section class="board-section">
+        <div class="board-toolbar">
+          <div><span class="live-dot"></span><strong>도시의 주인이 될 시간</strong></div>
+          <div class="view-switch" role="group" aria-label="보드 보기"><button id="view-3d" type="button" aria-pressed="false" disabled>3D 보드</button><button id="view-2d" type="button" aria-pressed="true">2D 지도</button></div>
+        </div>
+        <div id="scene-wrap" class="scene-wrap" hidden>
+          <div id="scene-3d" class="scene-3d" aria-label="3D 블루마블 보드. 드래그로 회전, 휠로 확대. 도시는 클릭해서 확인하세요."></div>
+          <div class="scene-caption"><span>드래그 회전 · 휠 확대 · 도시 클릭</span><span id="scene-status">3D 준비 중</span></div>
+          <div class="camera-controls" role="group" aria-label="카메라 조절"><button id="camera-left" type="button" aria-label="왼쪽 회전">↶</button><button id="camera-right" type="button" aria-label="오른쪽 회전">↷</button><button id="camera-in" type="button" aria-label="확대">＋</button><button id="camera-out" type="button" aria-label="축소">−</button><button id="camera-home" type="button">기본 시점</button><button id="camera-top" type="button">위에서</button></div>
+        </div>
         <div id="board" class="board" aria-label="게임 보드"></div>
+        <div class="board-footer"><span id="view-status" role="status">2D 지도 · 3D 보드를 준비하고 있습니다.</span><span>Space 주사위 · Enter 턴 종료</span></div>
+        <section class="panel tile-inspector" aria-live="polite"><div><p class="eyebrow">TILE INSPECTOR</p><h2 id="tile-inspector-title">도시를 선택하세요</h2><p id="tile-inspector-info">3D 보드 또는 2D 지도에서 도시를 클릭하면 정보를 확인할 수 있어요.</p></div><button id="inspect-action" type="button" hidden>현재 도시 액션</button></section>
+        <details class="panel rules-panel"><summary>처음 플레이하시나요? 게임 방법</summary><p>2~4명이 한 기기에서 번갈아 플레이합니다. 이름을 정한 뒤 게임을 시작하고 주사위를 굴리세요. 빈 도시에 도착하면 구매하거나 패스할 수 있습니다. 본인 도시에 집·빌딩·호텔을 지어 임대료를 올리고, 상대 도시에 도착하면 임대료를 냅니다.</p><p>출발점을 지나면 200을 받고, 세금은 100, 무인도는 다음 턴 한 번 쉬기입니다. 이벤트는 이동·은행 납부·도시 강탈을 일으킵니다. 마지막까지 파산하지 않은 플레이어가 승리합니다.</p></details>
       </section>
 
       <aside class="side-panel">
@@ -24,8 +41,8 @@
             <option value="3">3명</option>
             <option value="4">4명</option>
           </select>
-          <button id="start-btn">게임 시작</button>
           <div id="player-name-inputs" class="name-inputs"></div>
+          <button id="start-btn">게임 시작</button><p class="setup-hint">시작 자금 1,500 · 출발 보너스 200</p>
         </section>
 
         <section class="panel turn-panel">
@@ -35,7 +52,7 @@
         </section>
 
         <section class="panel actions-panel">
-          <h2>액션</h2>
+          <h2>다음 액션</h2><p id="action-hint" class="action-hint">플레이어 이름을 정하고 게임을 시작하세요.</p>
           <div class="actions-grid">
             <button id="roll-btn">주사위 굴리기</button>
             <button id="buy-btn">구매</button>
@@ -89,5 +106,6 @@
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <script src="app.js" defer></script>
+  <script type="module" src="scene.js"></script>
 </body>
 </html>

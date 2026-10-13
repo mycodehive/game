@@ -1,4 +1,4 @@
-﻿const CONFIG = Object.freeze({
+const CONFIG = Object.freeze({
   START_MONEY: 1500,
   SALARY: 200,
   TAX_AMOUNT: 100,
@@ -23,6 +23,7 @@ const BUILD_RULES = Object.freeze({
 });
 
 let tiles = [];
+let selectedTileId = null;
 let players = [];
 let deck = [];
 
@@ -54,6 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
   cacheDom();
   bindEvents();
   renderNameInputs();
+  tiles = createTiles();
   render();
 });
 
@@ -89,6 +91,26 @@ function cacheDom() {
 }
 
 function bindEvents() {
+  dom.board.addEventListener("click", (event) => {
+    const cell = event.target.closest("[data-tile-id]");
+    if (cell) inspectTile(Number(cell.dataset.tileId));
+  });
+  dom.board.addEventListener("keydown", (event) => {
+    const cell = event.target.closest("[data-tile-id]");
+    if (cell && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      inspectTile(Number(cell.dataset.tileId));
+    }
+  });
+  document.getElementById("inspect-action").addEventListener("click", () => {
+    const current = getCurrentPlayer();
+    if (current && current.position === selectedTileId && !gameState.isAnimating) openCityArrivalModal(current.id, selectedTileId);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || /INPUT|SELECT|TEXTAREA|BUTTON/.test(event.target.tagName) || !dom.cityArrivalModal.hidden || !dom.ownedCitiesModal.hidden) return;
+    if (event.code === "Space" && !dom.rollBtn.disabled) { event.preventDefault(); dom.rollBtn.click(); }
+    if (event.key === "Enter" && !dom.endTurnBtn.disabled) { event.preventDefault(); dom.endTurnBtn.click(); }
+  });
   dom.playerCount.addEventListener("change", renderNameInputs);
   dom.playersList.addEventListener("click", (event) => {
     const trigger = event.target.closest(".player-owned-btn");
@@ -180,12 +202,15 @@ function renderNameInputs() {
     input.id = `player-name-${i}`;
     input.maxLength = 12;
     input.placeholder = `플레이어 ${i + 1} 이름`;
+    input.setAttribute("aria-label", `플레이어 ${i + 1} 이름`);
     input.value = oldValues[i] || `플레이어${i + 1}`;
     dom.playerNameInputs.appendChild(input);
   }
 }
 
 function initGame() {
+  if (gameState.isAnimating) return;
+  selectedTileId = null;
   const selectedCount = Number(dom.playerCount.value);
   const count = Math.min(CONFIG.MAX_PLAYERS, Math.max(CONFIG.MIN_PLAYERS, selectedCount));
 
@@ -288,6 +313,8 @@ function render() {
   renderOwnedCitiesModal();
   renderCityArrivalModal();
   updateActionButtons();
+  renderTileInspector();
+  window.dispatchEvent(new CustomEvent("bluemarble:state", { detail: getSceneSnapshot() }));
 }
 
 function renderBoard() {
@@ -321,6 +348,10 @@ function renderBoard() {
 
       const tile = tiles[tileIndex];
       cell.classList.add(`type-${tile.type.toLowerCase()}`);
+      cell.dataset.tileId = tile.id;
+      cell.tabIndex = 0;
+      cell.setAttribute("role", "button");
+      cell.setAttribute("aria-label", `${tile.name}${tile.type === "CITY" ? ` · 가격 ${tile.price} · 임대 ${getCurrentRent(tile)}` : ""} 정보`);
 
       const nameEl = document.createElement("div");
       nameEl.className = "tile-name";
@@ -424,7 +455,8 @@ function renderPlayersPanel() {
     const name = document.createElement("span");
     name.textContent = p.name;
     const money = document.createElement("span");
-    money.textContent = `자금 ${p.money}`;
+    money.textContent = `₩ ${p.money.toLocaleString("ko-KR")}`;
+    name.style.color = TOKEN_COLORS[playerOrder(p.id) % TOKEN_COLORS.length];
     head.appendChild(name);
     head.appendChild(money);
 
@@ -602,7 +634,10 @@ function renderLog() {
 function updateActionButtons() {
   const phase = gameState.phase;
   const busy = gameState.isAnimating;
-  dom.startBtn.disabled = false;
+  dom.startBtn.disabled = busy;
+  dom.startBtn.textContent = phase === "setup" ? "게임 시작 →" : "새 게임 시작";
+  const hints = { setup: "이름을 정하고 게임을 시작하세요.", await_roll: "주사위를 굴려 다음 도시로 이동하세요.", await_buy_decision: "도시를 구매하거나 패스하세요.", await_end_turn: "현재 도시에 건설하거나 턴을 종료하세요.", game_over: "게임 종료! 새 게임으로 다시 도전하세요." };
+  document.getElementById("action-hint").textContent = busy ? "도시로 이동 중입니다…" : hints[phase] || "";
   dom.rollBtn.disabled = busy || phase !== "await_roll";
   dom.buyBtn.disabled = busy || phase !== "await_buy_decision";
   dom.passBtn.disabled = busy || phase !== "await_buy_decision";
@@ -1198,3 +1233,38 @@ function phaseLabel(phase) {
       return phase;
   }
 }
+
+// Read-only scene bridge: the rule engine remains the only owner of game state.
+function getSceneSnapshot() {
+  return {
+    tiles: tiles.map((tile) => ({ ...tile, buildings: tile.buildings ? { ...tile.buildings } : null, currentRent: getCurrentRent(tile) })),
+    players: players.map((player) => ({ ...player, cards: player.cards.map(card => ({ ...card })), color: TOKEN_COLORS[playerOrder(player.id) % TOKEN_COLORS.length] })),
+    currentPlayerId: getCurrentPlayer()?.id || null,
+    phase: gameState.phase,
+    isAnimating: gameState.isAnimating,
+    lastRoll: gameState.lastRoll ? { ...gameState.lastRoll } : null
+  };
+}
+function inspectTile(id) {
+  if (!tiles[id]) return;
+  selectedTileId = id;
+  renderTileInspector();
+}
+function renderTileInspector() {
+  if (selectedTileId === null) {
+    document.getElementById("tile-inspector-title").textContent = "도시를 선택하세요";
+    document.getElementById("tile-inspector-info").textContent = "3D 보드 또는 2D 지도에서 도시를 클릭하면 정보를 확인할 수 있어요.";
+    document.getElementById("inspect-action").hidden = true;
+    return;
+  }
+  const tile = tiles[selectedTileId];
+  if (!tile) return;
+  const owner = findPlayerById(tile.ownerId);
+  const labels = { START: "출발 · 통과 시 200 지급", EVENT: "이벤트 · 카드 효과가 적용됩니다", TAX: "세금 · 100 납부", ISLAND: "무인도 · 다음 턴 한 번 쉬기" };
+  document.getElementById("tile-inspector-title").textContent = tile.name;
+  document.getElementById("tile-inspector-info").textContent = tile.type === "CITY" ? `가격 ${tile.price.toLocaleString("ko-KR")} · 임대 ${getCurrentRent(tile)} · ${owner ? owner.name : "은행"} 소유 · ${formatBuildings(tile)}` : labels[tile.type];
+  const current = getCurrentPlayer();
+  const action = document.getElementById("inspect-action");
+  action.hidden = !current || current.position !== selectedTileId || tile.type !== "CITY" || gameState.isAnimating || !["await_buy_decision", "await_end_turn"].includes(gameState.phase);
+}
+window.BlueMarbleGame = Object.freeze({ getSnapshot: getSceneSnapshot, inspectTile });
