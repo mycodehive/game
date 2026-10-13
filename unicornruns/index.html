@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ko">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#17162c"><meta name="description" content="유니콘과 숲, 구름, 별빛 코스를 달리는 3D Unicorn Runs. 맵을 선택하고 3·2·1 출발, 최대 3바퀴 완주에 도전하세요."><title>Unicorn Runs — PLAYROOM</title><link rel="stylesheet" href="style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#17162c"><meta name="description" content="유니콘과 숲, 구름, 별빛 코스를 달리는 3D Unicorn Runs. 난이도별 10개, 총 30개 맵을 선택하고 3·2·1 출발, 최대 3바퀴 완주에 도전하세요."><title>Unicorn Runs — PLAYROOM</title><link rel="stylesheet" href="style.css"></head>
 <body><main class="page">
 <header><a class="back" href="../">← PLAYROOM</a><div><p class="eyebrow">A LITTLE MAGIC. A GREAT RUN.</p><h1>Unicorn <span>Runs</span></h1></div><span class="badge">3D FANTASY RACING</span></header>
 <div class="layout">
@@ -13,7 +13,7 @@
 <div class="touch-controls" aria-label="터치 조작"><div><button type="button" data-control="left" aria-label="왼쪽 차선">◀</button><button type="button" data-control="right" aria-label="오른쪽 차선">▶</button></div><div><button type="button" data-control="brake" aria-label="감속">BRAKE</button><button type="button" data-control="throttle" aria-label="누르고 있으면 가속">RUN ↑</button></div></div>
 <div id="game-overlay" class="game-overlay"><div class="overlay-card"><p id="overlay-label" class="eyebrow">CHOOSE YOUR NEXT ADVENTURE</p><h2 id="overlay-title">어디로 달려볼까요?</h2><p id="overlay-description">맵을 고른 뒤 출발하세요.<br>3 · 2 · 1, 유니콘의 모험이 시작됩니다.</p><button id="play-button" class="primary" type="button">선택한 맵으로 출발 →</button><p id="overlay-note">W / ↑ 또는 RUN을 누르면 달립니다.</p></div></div>
 </section>
-<aside><section class="panel"><div class="panel-heading"><h2>경기 맵 선택</h2><span>01 — 03 LAPS</span></div><div id="map-list" class="map-list"></div><p class="panel-note">경기를 마치면 맵 선택 화면으로 돌아옵니다.<br>매 경기 새로운 기록에 도전하세요.</p></section>
+<aside><section class="panel"><div class="panel-heading"><h2>경기 맵 선택</h2><span id="map-count">초급 · 10개 코스</span></div><div id="difficulty-tabs" class="difficulty-tabs" role="group" aria-label="맵 난이도 선택"></div><div id="map-list" class="map-list"></div><p class="panel-note">초급·중급·고급마다 10개의 서로 다른 코스.<br>경기를 마치면 맵 선택 화면으로 돌아옵니다.<br>매 경기 새로운 기록에 도전하세요.</p></section>
 <section class="panel result-panel"><p class="eyebrow">YOUR LAST RUN</p><h2 id="result-title">첫 경기를 기다리는 중</h2><p id="result-detail">숲에서 가볍게 시작하거나, 별빛 속 3바퀴에 도전해 보세요.</p></section>
 <section class="panel controls-panel"><h2>달리는 방법</h2><p><kbd>W</kbd> / <kbd>↑</kbd> 누르고 가속<br><kbd>S</kbd> / <kbd>↓</kbd> 감속<br><kbd>A D</kbd> / <kbd>← →</kbd> 차선 이동<br><kbd>Esc</kbd> 일시정지 / 계속</p><p class="panel-note">코스의 방향을 따라 달립니다. 좌우로 차선을 바꾸고 길 밖으로 나가지 않도록 조절하세요. 길 밖에서는 속도가 줄어듭니다.</p><label><input id="reduce-effects" type="checkbox"> 움직임·효과 줄이기</label><button id="maps-button" class="secondary" type="button" disabled>↩ 경기 취소 · 맵 선택</button></section></aside>
 </div><p class="page-note">완주 후 3초 뒤 맵 선택으로 돌아갑니다. 창이나 탭을 떠나면 카운트다운과 경기가 자동 정지됩니다.</p>
